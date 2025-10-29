@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Supply Chain Blockchain</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .navbar {
+            background: #1a237e;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .navbar h1 {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .user-info span {
+            background: rgba(255,255,255,0.1);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        .user-info button {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #4caf50;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .input-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .input-section h2 {
+            color: #1a237e;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .form-group textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        .submit-btn {
+            background: #1a237e;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        .submit-btn:hover {
+            background: #283593;
+        }
+        .history-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .timeline-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+        .timeline-content {
+            flex: 1;
+        }
+        .timeline-qr {
+            flex-shrink: 0;
+            text-align: center;
+        }
+        .timeline-qr img {
+            width: 120px;
+            height: 120px;
+            border: 2px solid #1a237e;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .timeline-qr img:hover {
+            transform: scale(1.05);
+        }
+        .timeline-qr p {
+            margin: 5px 0 0 0;
+            font-size: 11px;
+            color: #666;
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .nav-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            background: white;
+            color: #1a237e;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .nav-btn.active {
+            background: #1a237e;
+            color: white;
+        }
+        .message {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .qr-modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+        }
+        .qr-modal.show {
+            display: flex !important;
+        }
+        .qr-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .qr-modal-content h2 {
+            color: #1a237e;
+            margin-bottom: 20px;
+        }
+        .qr-modal-content img {
+            max-width: 100%;
+            border: 3px solid #1a237e;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .qr-modal-content button {
+            margin: 10px;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .qr-download-btn {
+            background: #4caf50;
+            color: white;
+        }
+        .qr-close-btn {
+            background: #f44336;
+            color: white;
+        }
+        .qr-product-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>📦 Supply Chain Blockchain</h1>
+        <div class="user-info">
+            <span id="userRole">Loading...</span>
+            <span id="userName">Loading...</span>
+            <button onclick="location.href='index.html'">🏠 Trang chủ</button>
+            <button onclick="logout()">Đăng xuất</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="nav-buttons">
+            <button class="nav-btn active" onclick="showSection('input')">📝 Nhập liệu</button>
+            <button class="nav-btn" onclick="showSection('history')">📋 Lịch sử</button>
+            <button class="nav-btn" onclick="showBlockchainStats()">📊 Thống kê Blockchain</button>
+            <button class="nav-btn" onclick="validateBlockchain(event)">🔍 Kiểm tra tính hợp lệ</button>
+        </div>
+
+        <div id="inputSection" class="input-section">
+            <!-- Form sẽ được tạo động dựa vào role -->
+        </div>
+
+        <div id="historySection" class="history-section" style="display: none;">
+            <h2>📋 Lịch sử cập nhật của bạn</h2>
+            <div id="historyContent"></div>
+        </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div id="qrModal" class="qr-modal">
+        <div class="qr-modal-content">
+            <h2>📱 Mã QR Sản Phẩm</h2>
+            <div class="qr-product-info">
+                <p><strong>Mã sản phẩm:</strong> <span id="qrProductId"></span></p>
+                <p><strong>Block:</strong> #<span id="qrBlockIndex"></span></p>
+                <p><strong>Hash:</strong> <code id="qrBlockHash" style="font-size: 11px;"></code></p>
+            </div>
+            <img id="qrCodeImage" src="" alt="QR Code">
+            <p style="color: #666; font-size: 14px; margin: 10px 0;">
+                📸 Quét mã QR này để xem lịch sử sản phẩm
+            </p>
+            <div>
+                <button class="qr-download-btn" onclick="downloadQRCode()">💾 Tải xuống QR</button>
+                <button class="qr-close-btn" onclick="closeQRModal()">Đóng</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // Sử dụng IP để điện thoại có thể kết nối
+        // API_URL will be set by config.js
+        let currentUser = null;
+
+        // Kiểm tra đăng nhập
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            
+            if (!token || !user.username) {
+                location.href = 'login.html';
+                return;
+            }
+
+            currentUser = user;
+            document.getElementById('userName').textContent = `👤 ${user.username}`;
+            document.getElementById('userRole').textContent = getRoleIcon(user.role) + ' ' + getRoleName(user.role);
+            createFormForRole(user.role);
+            loadUserHistory();
+        }
+
+        function getRoleIcon(role) {
+            const icons = {
+                'farmer': '🌾',
+                'shipper': '🚚',
+                'factory': '🏭',
+                'retailer': '🏪'
+            };
+            return icons[role] || '👤';
+        }
+
+        function getRoleName(role) {
+            const roles = {
+                'farmer': 'Nông dân',
+                'shipper': 'Vận chuyển',
+                'factory': 'Nhà máy',
+                'retailer': 'Bán lẻ'
+            };
+            return roles[role] || role;
+        }
+
+        function createFormForRole(role) {
+            const section = document.getElementById('inputSection');
+            let formContent = '';
+
+            // Fields chung cho mọi role
+            const commonFields = `
+                <div class="form-group">
+                    <label for="productId">Mã sản phẩm *</label>
+                    <input type="text" id="productId" required placeholder="VD: CAFE-001">
+                </div>
+                <div class="form-group">
+                    <label for="location">Địa điểm *</label>
+                    <input type="text" id="location" required placeholder="Nhập địa điểm hiện tại">
+                </div>
+            `;
+
+            switch(role) {
+                case 'farmer':
+                    formContent = `
+                        <h2>🌾 Ghi nhận thông tin thu hoạch</h2>
+                        ${commonFields}
+                        <div class="form-group">
+                            <label for="harvestDate">Ngày thu hoạch *</label>
+                            <input type="date" id="harvestDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">Số lượng (kg) *</label>
+                            <input type="number" id="quantity" required min="0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="quality">Chất lượng</label>
+                            <select id="quality" required>
+                                <option value="A">Loại A - Cao cấp</option>
+                                <option value="B">Loại B - Tiêu chuẩn</option>
+                                <option value="C">Loại C - Thường</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="notes">Ghi chú</label>
+                            <textarea id="notes" placeholder="Thông tin thêm về lô hàng..."></textarea>
+                        </div>
+                    `;
+                    break;
+
+                case 'shipper':
+                    formContent = `
+                        <h2>🚚 Cập nhật vận chuyển</h2>
+                        ${commonFields}
+                        <div class="form-group">
+                            <label for="status">Trạng thái *</label>
+                            <select id="status" required>
+                                <option value="pickup">Đã lấy hàng</option>
+                                <option value="intransit">Đang vận chuyển</option>
+                                <option value="delivered">Đã giao hàng</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="fromLocation">Điểm lấy hàng *</label>
+                            <input type="text" id="fromLocation" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="toLocation">Điểm giao hàng *</label>
+                            <input type="text" id="toLocation" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="temperature">Nhiệt độ (°C)</label>
+                            <input type="number" id="temperature" step="0.1">
+                        </div>
+                    `;
+                    break;
+
+                case 'factory':
+                    formContent = `
+                        <h2>🏭 Ghi nhận sản xuất</h2>
+                        ${commonFields}
+                        <div class="form-group">
+                            <label for="processType">Loại quy trình *</label>
+                            <select id="processType" required>
+                                <option value="cleaning">Làm sạch</option>
+                                <option value="roasting">Rang</option>
+                                <option value="grinding">Xay</option>
+                                <option value="packaging">Đóng gói</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="batchNumber">Số lô *</label>
+                            <input type="text" id="batchNumber" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="temperature">Nhiệt độ xử lý (°C)</label>
+                            <input type="number" id="temperature" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="duration">Thời gian xử lý (phút)</label>
+                            <input type="number" id="duration" min="0">
+                        </div>
+                    `;
+                    break;
+
+                case 'retailer':
+                    formContent = `
+                        <h2>🏪 Ghi nhận bán hàng</h2>
+                        ${commonFields}
+                        <div class="form-group">
+                            <label for="saleDate">Ngày bán *</label>
+                            <input type="date" id="saleDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">Số lượng bán (kg) *</label>
+                            <input type="number" id="quantity" required min="0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="price">Giá bán (VNĐ/kg) *</label>
+                            <input type="number" id="price" required min="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="customerType">Loại khách hàng</label>
+                            <select id="customerType">
+                                <option value="individual">Cá nhân</option>
+                                <option value="business">Doanh nghiệp</option>
+                            </select>
+                        </div>
+                    `;
+                    break;
+            }
+
+            formContent += `
+                <button type="submit" class="submit-btn" onclick="submitForm()">
+                    💾 Lưu thông tin
+                </button>
+            `;
+
+            section.innerHTML = formContent;
+        }
+
+        function showSection(sectionName) {
+            document.getElementById('inputSection').style.display = 
+                sectionName === 'input' ? 'block' : 'none';
+            document.getElementById('historySection').style.display = 
+                sectionName === 'history' ? 'block' : 'none';
+
+            // Update active button
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.includes(sectionName === 'input' ? 'Nhập liệu' : 'Lịch sử')) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
+
+        async function submitForm() {
+            const formData = {};
+            const inputs = document.querySelectorAll('#inputSection input, #inputSection select, #inputSection textarea');
+            inputs.forEach(input => {
+                if (input.value) {
+                    formData[input.id] = input.value;
+                }
+            });
+
+            formData.actor = currentUser.username;
+            formData.role = currentUser.role;
+
+            try {
+                const response = await fetch(`${window.API_URL}/api/record`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                console.log('📡 Response status:', response.status);
+                console.log('📡 Response headers:', response.headers);
+                
+                if (!response.ok) {
+                    // Xử lý lỗi HTTP
+                    let errorMessage = `HTTP ${response.status}: `;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage += errorData.message || 'Có lỗi xảy ra';
+                        if (errorData.hint) {
+                            errorMessage += '\n\n💡 Gợi ý: ' + errorData.hint;
+                        }
+                        if (errorData.action) {
+                            errorMessage += '\n\n📌 Hành động: ' + errorData.action;
+                        }
+                        if (errorData.debug) {
+                            console.log('🔍 Debug info:', errorData.debug);
+                        }
+                    } catch (parseError) {
+                        errorMessage += 'Không thể parse response';
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                
+                console.log('📡 Response từ server:', data);
+                console.log('🔍 Có QR Code?', !!data.data?.qrCode);
+                console.log('👤 User role:', currentUser.role);
+                
+                                // Hiển thị thông báo thành công (cho tất cả role)
+                if (data.data && data.data.qrCode) {
+                    alert('✅ Thông tin đã được ghi nhận thành công!\n📱 QR Code đã được tạo và lưu vào lịch sử.');
+                } else {
+                    alert('✅ Thông tin đã được ghi nhận thành công!');
+                }
+                
+                // Reset form và reload history
+                loadUserHistory();
+                inputs.forEach(input => {
+                    if (input.type !== 'select-one') {
+                        input.value = '';
+                    }
+                });
+            } catch (error) {
+                console.error('❌ Submit error:', error);
+                
+                // Xử lý các loại lỗi khác nhau
+                let errorMessage = '';
+                if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                    errorMessage = '❌ Lỗi kết nối server!\n\n' +
+                                 '🔍 Kiểm tra:\n' +
+                                 '• Server có đang chạy không?\n' +
+                                 '• URL server có đúng không?\n' +
+                                 '• Có lỗi CORS không?\n\n' +
+                                 '📌 Thử:\n' +
+                                 '• Refresh trang\n' +
+                                 '• Kiểm tra console để xem chi tiết lỗi';
+                } else if (error.name === 'SyntaxError') {
+                    errorMessage = '❌ Lỗi parse dữ liệu từ server!\n\n' +
+                                 'Server trả về dữ liệu không đúng định dạng JSON.';
+                } else {
+                    errorMessage = `❌ Lỗi: ${error.message}`;
+                }
+                
+                alert(errorMessage);
+            }
+        }
+
+        async function loadUserHistory() {
+            const historyContent = document.getElementById('historyContent');
+            historyContent.innerHTML = '<div class="loading">⏳ Đang tải lịch sử...</div>';
+
+            try {
+                // Wait for API_URL to be available
+                if (!window.API_URL) {
+                    await new Promise(resolve => {
+                        const checkInterval = setInterval(() => {
+                            if (window.API_URL) {
+                                clearInterval(checkInterval);
+                                resolve();
+                            }
+                        }, 100);
+                    });
+                }
+
+                console.log('Loading history with API URL:', window.API_URL);
+                const response = await fetch(`${window.API_URL}/api/user-history/${currentUser.username}`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Non-JSON response:', text);
+                    throw new Error(`Server trả về HTML thay vì JSON. Status: ${response.status}. Response: ${text.substring(0, 200)}...`);
+                }
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    if (!data || data.length === 0) {
+                        historyContent.innerHTML = `
+                            <div class="empty-message">
+                                ℹ️ Chưa có lịch sử cập nhật nào.
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    let html = '';
+                    data.forEach(item => {
+                        const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
+                        
+                        // Tạo phần QR code nếu có
+                        let qrSection = '';
+                        if (item.qrCode) {
+                            qrSection = `
+                                <div class="timeline-qr">
+                                    <img src="${item.qrCode}" 
+                                         alt="QR Code" 
+                                         onclick="enlargeQR('${item.qrCode}', '${item.productId}')"
+                                         title="Click để phóng to QR code">
+                                    <p>📱 Quét QR</p>
+                                </div>
+                            `;
+                        }
+                        
+                        html += `
+                            <div class="timeline-item">
+                                <div class="timeline-content">
+                                    <div class="timeline-status">📍 ${item.status || getRoleAction(currentUser.role)}</div>
+                                    <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
+                                    <div class="timeline-info"><strong>📦 Sản phẩm:</strong> ${item.productId}</div>
+                                    <div class="timeline-info"><strong>📍 Vị trí:</strong> ${item.location}</div>
+                                </div>
+                                ${qrSection}
+                            </div>
+                        `;
+                    });
+
+                    historyContent.innerHTML = html;
+                } else {
+                    throw new Error(data.error || 'Có lỗi xảy ra');
+                }
+            } catch (error) {
+                historyContent.innerHTML = `
+                    <div class="empty-message" style="color: #d32f2f;">
+                        ❌ Lỗi tải lịch sử: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        function getRoleAction(role) {
+            const actions = {
+                'farmer': 'Ghi nhận thu hoạch',
+                'shipper': 'Cập nhật vận chuyển',
+                'factory': 'Ghi nhận sản xuất',
+                'retailer': 'Ghi nhận bán hàng'
+            };
+            return actions[role] || 'Cập nhật trạng thái';
+        }
+
+        function logout() {
+            if (confirm('Bạn có chắc muốn đăng xuất?')) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                location.href = 'index.html';
+            }
+        }
+
+        // Hiển thị thống kê blockchain
+        async function showBlockchainStats() {
+            try {
+                const response = await fetch(`${window.API_URL}/api/blockchain/stats`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const stats = result.data;
+                    const validText = stats.isValid ? '✅ Hợp lệ' : '❌ Không hợp lệ';
+                    
+                    alert(`📊 THỐNG KÊ BLOCKCHAIN\n\n` +
+                          `Tổng số Block: ${stats.totalBlocks}\n` +
+                          `Độ khó Mining: ${stats.difficulty} (${stats.difficulty} chữ số 0)\n` +
+                          `Giao dịch đang chờ: ${stats.pendingTransactions}\n` +
+                          `Trạng thái: ${validText}\n\n` +
+                          `BLOCK MỚI NHẤT:\n` +
+                          `- Index: #${stats.latestBlock.index}\n` +
+                          `- Hash: ${stats.latestBlock.hash.substring(0, 20)}...\n` +
+                          `- Thời gian: ${new Date(stats.latestBlock.timestamp).toLocaleString('vi-VN')}`);
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                alert(`❌ Lỗi lấy thống kê: ${error.message}`);
+            }
+        }
+
+        // Validate blockchain
+        async function validateBlockchain(event) {
+            try {
+                const confirmValidate = confirm('🔍 Xác thực blockchain sẽ kiểm tra:\n' +
+                                               '• Tính toàn vẹn của mỗi block\n' +
+                                               '• Liên kết giữa các block\n' +
+                                               '• Proof of Work (PoW)\n\n' +
+                                               'Tiếp tục?');
+                
+                if (!confirmValidate) return;
+                
+                // Show loading
+                let button = null;
+                if (event && event.target) {
+                    button = event.target;
+                    button.textContent = '⏳ Đang kiểm tra...';
+                    button.disabled = true;
+                }
+                
+                const response = await fetch(`${window.API_URL}/api/blockchain/validate`);
+                const result = await response.json();
+                
+                // Restore button
+                if (button) {
+                    button.textContent = '🔍 Kiểm tra tính hợp lệ';
+                    button.disabled = false;
+                }
+                
+                if (result.success) {
+                    const icon = result.isValid ? '✅' : '❌';
+                    const message = result.message;
+                    
+                    alert(`${icon} KẾT QUẢ XÁC THỰC\n\n` +
+                          `${message}\n\n` +
+                          `Tổng số block: ${result.stats.totalBlocks}\n` +
+                          `Độ khó: ${result.stats.difficulty}\n` +
+                          `Latest Hash: ${result.stats.latestBlockHash.substring(0, 20)}...`);
+                } else {
+                    throw new Error(result.message);
+                }
+            } catch (error) {
+                alert(`❌ Lỗi xác thực: ${error.message}`);
+                // Restore button on error
+                if (event && event.target) {
+                    event.target.textContent = '🔍 Kiểm tra tính hợp lệ';
+                    event.target.disabled = false;
+                }
+            }
+        }
+
+        // Hiển thị QR Code Modal
+        function showQRModal(blockData) {
+            console.log('🎉 Hiển thị QR Modal cho sản phẩm:', blockData.productId);
+            console.log('📦 Block Data:', blockData);
+            
+            const modal = document.getElementById('qrModal');
+            const qrImage = document.getElementById('qrCodeImage');
+            const productIdEl = document.getElementById('qrProductId');
+            const blockIndexEl = document.getElementById('qrBlockIndex');
+            const blockHashEl = document.getElementById('qrBlockHash');
+
+            // Set thông tin
+            productIdEl.textContent = blockData.productId;
+            blockIndexEl.textContent = blockData.blockIndex;
+            blockHashEl.textContent = blockData.blockHash.substring(0, 20) + '...';
+            qrImage.src = blockData.qrCode;
+
+            // Hiển thị modal
+            modal.classList.add('show');
+            document.body.style.overflow = 'hidden';
+            console.log('✅ Modal đã được hiển thị với class:', modal.className);
+        }
+
+        // Đóng QR Modal
+        function closeQRModal() {
+            console.log('🚪 Đóng QR Modal');
+            
+            const modal = document.getElementById('qrModal');
+            
+            // Đóng modal bằng cách remove class 'show'
+            modal.classList.remove('show');
+            
+            // Restore body scroll
+            document.body.style.overflow = 'auto';
+            
+            // Reset form và reload history sau khi đóng modal
+            if (window.pendingFormReset) {
+                console.log('🔄 Reset form và reload history');
+                window.pendingFormReset.forEach(input => {
+                    if (input.type !== 'select-one') {
+                        input.value = '';
+                    }
+                });
+                window.pendingFormReset = null;
+                
+                // Reload history
+                loadUserHistory();
+            }
+        }
+
+        // Phóng to QR code (từ lịch sử)
+        function enlargeQR(qrCodeData, productId) {
+            console.log('🔍 Phóng to QR cho sản phẩm:', productId);
+            
+            const modal = document.getElementById('qrModal');
+            const qrImage = document.getElementById('qrCodeImage');
+            const productIdEl = document.getElementById('qrProductId');
+            const blockIndexEl = document.getElementById('qrBlockIndex');
+            const blockHashEl = document.getElementById('qrBlockHash');
+
+            // Set thông tin
+            productIdEl.textContent = productId;
+            blockIndexEl.textContent = 'Xem từ lịch sử';
+            blockHashEl.textContent = 'QR Code đã lưu';
+            qrImage.src = qrCodeData;
+
+            // Hiển thị modal
+            modal.classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+
+        // Tải xuống QR Code
+        function downloadQRCode() {
+            const qrImage = document.getElementById('qrCodeImage');
+            const productId = document.getElementById('qrProductId').textContent;
+            
+            // Tạo link download
+            const link = document.createElement('a');
+            link.href = qrImage.src;
+            link.download = `QR_${productId.replace(/\s+/g, '_')}.png`;
+            link.click();
+            
+            // Hiển thị thông báo thành công (không dùng alert để không block modal)
+            setTimeout(() => {
+                const confirmed = confirm('✅ Đã tải xuống mã QR!\n\nĐóng cửa sổ này?');
+                if (confirmed) {
+                    closeQRModal();
+                }
+            }, 300);
+        }
+
+        // Đóng modal khi click bên ngoài - SỬA ĐỂ TRÁNH CONFLICT
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('qrModal');
+            
+            // Chỉ đóng nếu click vào backdrop (modal), không phải modal-content
+            if (event.target === modal && modal.classList.contains('show')) {
+                console.log('👆 Click outside modal - đóng');
+                closeQRModal();
+            }
+        });
+        
+        // Ngăn modal đóng khi click vào nội dung modal
+        const modalContent = document.querySelector('.qr-modal-content');
+        if (modalContent) {
+            modalContent.addEventListener('click', function(event) {
+                event.stopPropagation();
+                console.log('👆 Click inside modal - giữ mở');
+            });
+        }
+
+
+        // Kiểm tra đăng nhập khi tải trang
+        checkAuth();
+    </script>
+    
+    <!-- Smart Contract Handler -->
+    <script src="js/smart-contract.js"></script>
+    
+    <!-- Auto-detect API URL -->
+    <script src="js/config.js"></script>
+</body>
+</html>

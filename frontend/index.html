@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supply Chain Blockchain</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+        }
+        .navbar {
+            background: #1a237e;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .navbar h1 {
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .auth-buttons {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .auth-buttons button {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.3s;
+        }
+        .login-btn {
+            background: #4caf50;
+            color: white;
+        }
+        .register-btn {
+            background: white;
+            color: #1a237e;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            color: white;
+        }
+        .user-info span {
+            background: rgba(255,255,255,0.1);
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        .search-section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .role-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .action-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .action-card h3 {
+            color: #1a237e;
+            margin-bottom: 15px;
+        }
+        .action-card p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .action-btn {
+            background: #1a237e;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+        }
+        #searchForm {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        #searchForm input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        #searchForm button {
+            background: #1a237e;
+            color: white;
+            border: none;
+            padding: 0 30px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #result {
+            margin-top: 20px;
+        }
+        .timeline {
+            margin-top: 20px;
+        }
+        .timeline-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>📦 Supply Chain Blockchain</h1>
+        <div id="authSection" class="auth-buttons">
+            <button class="login-btn" onclick="location.href='login.html'">Đăng nhập</button>
+            <button class="register-btn" onclick="location.href='register.html'">Đăng ký</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="search-section">
+            <h2>🔍 Tra cứu sản phẩm</h2>
+            <form id="searchForm">
+                <input type="text" id="productId" placeholder="Nhập mã sản phẩm (VD: CAFE-001)" required>
+                <button type="submit">Tra cứu</button>
+            </form>
+            <div id="result" style="display: none;"></div>
+        </div>
+
+        <div id="roleActions" class="role-actions" style="display: none;">
+            <!-- Role-specific actions will be inserted here -->
+        </div>
+        
+        <!-- Smart Contract Information -->
+        <div id="smartContractInfo" style="display: none;">
+            <!-- Smart Contract info will be inserted here -->
+        </div>
+        
+        <!-- User Permissions -->
+        <div id="userPermissions" style="display: none;">
+            <!-- User permissions will be inserted here -->
+        </div>
+        
+        <!-- Smart Contract Message -->
+        <div id="smartContractMessage" class="message" style="display: none;">
+            <!-- Smart Contract validation messages will be inserted here -->
+        </div>
+    </div>
+
+    <!-- Socket.IO Client Library -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <!-- Auto-detect API URL -->
+    <script src="js/config.js"></script>
+
+    <script>
+        // Sử dụng IP để điện thoại có thể kết nối
+        // API_URL will be set by config.js
+        let currentUser = null;
+        let socket = null;
+        let currentProductId = null;
+
+        // Kiểm tra đăng nhập và hiển thị thông tin user
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const user = JSON.parse(localStorage.getItem('user') || '{}');
+            
+            if (token && user) {
+                currentUser = user;
+                const authSection = document.getElementById('authSection');
+                authSection.innerHTML = `
+                    <div class="user-info">
+                        <span>👤 ${user.username}</span>
+                        <span>${getRoleName(user.role)}</span>
+                        <button class="login-btn" onclick="logout()">Đăng xuất</button>
+                    </div>
+                `;
+                
+                // Hiển thị Smart Contract info
+                setTimeout(() => {
+                    if (window.smartContractHandler) {
+                        window.smartContractHandler.displayUserPermissions();
+                        window.smartContractHandler.displaySmartContractInfo();
+                    }
+                }, 100);
+                showRoleActions(user.role);
+            }
+        }
+
+        function getRoleName(role) {
+            const roles = {
+                'farmer': '🌾 Nông dân',
+                'shipper': '🚚 Vận chuyển',
+                'factory': '🏭 Nhà máy',
+                'retailer': '🏪 Bán lẻ'
+            };
+            return roles[role] || role;
+        }
+
+        function showRoleActions(role) {
+            const actionsDiv = document.getElementById('roleActions');
+            actionsDiv.style.display = 'grid';
+            
+            let actions = '';
+            
+            // Chức năng chung cho mọi role
+            actions += `
+                <div class="action-card">
+                    <h3>📝 Thêm Trạng Thái Mới</h3>
+                    <p>Cập nhật trạng thái mới cho sản phẩm vào blockchain</p>
+                    <button class="action-btn" onclick="location.href='dashboard.html'">Vào Dashboard</button>
+                </div>
+            `;
+
+            // Chức năng theo role
+            switch(role) {
+                case 'farmer':
+                    actions += `
+                        <div class="action-card">
+                            <h3>🌾 Quản Lý Thu Hoạch</h3>
+                            <p>Ghi nhận thông tin thu hoạch mới</p>
+                            <button class="action-btn" onclick="location.href='dashboard.html'">Thêm Thu Hoạch</button>
+                        </div>
+                    `;
+                    break;
+                case 'shipper':
+                    actions += `
+                        <div class="action-card">
+                            <h3>🚚 Quản Lý Vận Chuyển</h3>
+                            <p>Cập nhật trạng thái vận chuyển</p>
+                            <button class="action-btn" onclick="location.href='dashboard.html'">Cập Nhật Vận Chuyển</button>
+                        </div>
+                    `;
+                    break;
+                case 'factory':
+                    actions += `
+                        <div class="action-card">
+                            <h3>🏭 Quản Lý Sản Xuất</h3>
+                            <p>Ghi nhận các giai đoạn sản xuất</p>
+                            <button class="action-btn" onclick="location.href='dashboard.html'">Cập Nhật Sản Xuất</button>
+                        </div>
+                    `;
+                    break;
+                case 'retailer':
+                    actions += `
+                        <div class="action-card">
+                            <h3>🏪 Quản Lý Bán Lẻ</h3>
+                            <p>Ghi nhận thông tin bán hàng</p>
+                            <button class="action-btn" onclick="location.href='dashboard.html'">Cập Nhật Bán Hàng</button>
+                        </div>
+                    `;
+                    break;
+            }
+
+            // Thêm chức năng xem blockchain cho tất cả role
+            actions += `
+                <div class="action-card">
+                    <h3>🔍 Xem Blockchain</h3>
+                    <p>Xem toàn bộ chuỗi khối</p>
+                    <button class="action-btn" onclick="location.href='admin.html'">Xem Blockchain</button>
+                </div>
+            `;
+
+            actionsDiv.innerHTML = actions;
+        }
+
+        function logout() {
+            if (confirm('Bạn có chắc muốn đăng xuất?')) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                location.reload();
+            }
+        }
+
+        // ============ WebSocket Real-time Updates ============
+        function initWebSocket() {
+            socket = io(window.API_URL, {
+                transports: ['websocket', 'polling']
+            });
+
+            socket.on('connect', () => {
+                console.log('🔌 Kết nối WebSocket thành công:', socket.id);
+                
+                // Nếu đang xem một sản phẩm, subscribe lại
+                if (currentProductId) {
+                    socket.emit('subscribe:product', currentProductId);
+                    console.log('📦 Đã subscribe lại sản phẩm:', currentProductId);
+                }
+            });
+
+            socket.on('disconnect', () => {
+                console.log('🔌 WebSocket đã ngắt kết nối');
+            });
+
+            // Lắng nghe sự kiện block mới cho sản phẩm đang xem
+            socket.on('blockchain:newBlock', (data) => {
+                console.log('📡 Nhận được block mới:', data);
+                console.log('📦 Sản phẩm đang xem:', currentProductId);
+                console.log('📦 Sản phẩm của block mới:', data.productId);
+                
+                // Normalize để so sánh (trim whitespace)
+                const normalizedCurrent = currentProductId ? currentProductId.trim() : '';
+                const normalizedNew = data.productId ? data.productId.trim() : '';
+                
+                console.log('🔍 So sánh (normalized):', normalizedCurrent, '===', normalizedNew, '=', normalizedCurrent === normalizedNew);
+                
+                // Nếu đang xem sản phẩm này, tự động reload
+                if (normalizedCurrent && normalizedCurrent === normalizedNew) {
+                    console.log('✅ Match! Tự động cập nhật lịch sử sản phẩm...');
+                    
+                    // Hiển thị thông báo real-time
+                    showRealtimeNotification(data);
+                    
+                    // Reload lịch sử sau 1 giây (với flag isRealtimeUpdate = true)
+                    setTimeout(() => {
+                        console.log('🔄 Đang gọi searchProduct cho:', currentProductId);
+                        searchProduct(currentProductId, true);  // true = real-time update
+                    }, 1000);
+                } else {
+                    console.log('❌ Không match hoặc không đang xem sản phẩm nào');
+                }
+            });
+        }
+
+        // Hiển thị thông báo real-time
+        function showRealtimeNotification(data) {
+            console.log('🔔 Hiển thị notification cho:', data);
+            
+            const resultDiv = document.getElementById('result');
+            
+            // Đảm bảo result div đang hiển thị
+            if (resultDiv.style.display === 'none') {
+                console.log('⚠️ Result div đang ẩn, bỏ qua notification');
+                return;
+            }
+            
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                background: #4caf50;
+                color: white;
+                padding: 15px;
+                border-radius: 5px;
+                margin-bottom: 15px;
+                animation: slideIn 0.3s ease-out;
+            `;
+            notification.innerHTML = `
+                <strong>🔔 Cập nhật mới!</strong><br>
+                <strong>${data.actor}</strong> (${getRoleName(data.role)}) đã thêm: <strong>${data.status}</strong><br>
+                <small>Block #${data.blockIndex} | ${new Date(data.timestamp).toLocaleString('vi-VN')}</small>
+            `;
+            
+            // Thêm animation CSS nếu chưa có
+            if (!document.querySelector('#slideInAnimation')) {
+                const style = document.createElement('style');
+                style.id = 'slideInAnimation';
+                style.innerHTML = `
+                    @keyframes slideIn {
+                        from { transform: translateY(-20px); opacity: 0; }
+                        to { transform: translateY(0); opacity: 1; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            resultDiv.insertBefore(notification, resultDiv.firstChild);
+            console.log('✅ Đã thêm notification vào result div');
+            
+            // Xóa thông báo sau 5 giây
+            setTimeout(() => {
+                notification.style.animation = 'slideIn 0.3s ease-out reverse';
+                setTimeout(() => notification.remove(), 300);
+            }, 5000);
+        }
+
+        // Hàm tìm kiếm sản phẩm (để tái sử dụng)
+        async function searchProduct(productId, isRealtimeUpdate = false) {
+            console.log('🔍 searchProduct được gọi với:', productId, 'isRealtimeUpdate:', isRealtimeUpdate);
+            
+            const resultDiv = document.getElementById('result');
+            
+            // Nếu là real-time update, giữ lại notification (không reset innerHTML ngay)
+            if (!isRealtimeUpdate) {
+                resultDiv.innerHTML = '<div class="loading">⏳ Đang tìm kiếm trên blockchain...</div>';
+            }
+            
+            resultDiv.style.display = 'block';
+            console.log('📍 Result div display:', resultDiv.style.display);
+
+            try {
+                const response = await fetch(`${window.API_URL}/api/history/${productId}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Lưu lại notifications nếu là real-time update
+                    let savedNotifications = null;
+                    if (isRealtimeUpdate) {
+                        // Tìm tất cả notification elements
+                        savedNotifications = Array.from(resultDiv.querySelectorAll('div[style*="background: #4caf50"]'));
+                        console.log('💾 Đã lưu', savedNotifications.length, 'notifications');
+                    }
+                    
+                    if (!data || data.length === 0) {
+                        resultDiv.innerHTML = `
+                            <div class="result-title">Kết quả cho: ${productId}</div>
+                            <div class="empty-message">
+                                ℹ️ Không tìm thấy lịch sử cho sản phẩm này.<br>
+                                Sản phẩm có thể chưa được ghi nhận trên blockchain.
+                            </div>
+                        `;
+                    } else {
+                        let html = `
+                            <div class="result-title">
+                                📦 Lịch sử sản phẩm: ${productId}
+                            </div>
+                        `;
+                        html += '<div class="timeline">';
+                        
+                        data.forEach(item => {
+                            const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
+                            html += `
+                                <div class="timeline-item">
+                                    <div style="background: #e3f2fd; padding: 8px; border-radius: 3px; margin-bottom: 10px;">
+                                        <strong>⛓️ Block #${item.blockIndex || 'N/A'}</strong> | 
+                                        Hash: <code style="font-size: 11px;">${item.hash ? item.hash.substring(0, 16) + '...' : 'N/A'}</code> | 
+                                        Nonce: <code>${item.nonce || 'N/A'}</code>
+                                    </div>
+                                    <div class="timeline-status">📍 ${item.status}</div>
+                                    <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
+                                    <div class="timeline-info"><strong>📍 Vị trí:</strong> ${item.location}</div>
+                                    <div class="timeline-info"><strong>👤 Thực hiện bởi:</strong> <code>${item.actor}</code></div>
+                                </div>
+                            `;
+                        });
+                        
+                        html += '</div>';
+                        resultDiv.innerHTML = html;
+                        
+                        // Khôi phục lại notifications nếu có
+                        if (savedNotifications && savedNotifications.length > 0) {
+                            console.log('📤 Khôi phục', savedNotifications.length, 'notifications');
+                            savedNotifications.forEach(notification => {
+                                resultDiv.insertBefore(notification, resultDiv.firstChild);
+                            });
+                        }
+                    }
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="empty-message" style="color: #d32f2f;">
+                            ❌ ${data.error || 'Có lỗi xảy ra'}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="empty-message" style="color: #d32f2f;">
+                        ❌ Lỗi: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // Xử lý form tìm kiếm
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const productId = document.getElementById('productId').value.trim();
+            console.log('🔍 Form submit với productId:', productId);
+            console.log('🔍 Socket connected?', socket ? socket.connected : 'socket is null');
+            console.log('🔍 Current productId trước khi set:', currentProductId);
+            
+            // Unsubscribe sản phẩm cũ nếu có
+            if (currentProductId && socket) {
+                socket.emit('unsubscribe:product', currentProductId);
+                console.log('📦 Đã bỏ theo dõi sản phẩm:', currentProductId);
+            }
+            
+            // Lưu sản phẩm mới
+            currentProductId = productId;
+            console.log('🔍 Current productId sau khi set:', currentProductId);
+            
+            // Subscribe vào sản phẩm mới
+            if (socket && socket.connected) {
+                socket.emit('subscribe:product', productId);
+                console.log('📦 Đang theo dõi sản phẩm:', productId);
+            } else {
+                console.log('❌ Socket không kết nối, không thể subscribe');
+            }
+            
+            // Tìm kiếm sản phẩm
+            await searchProduct(productId);
+        });
+
+        // Tự động tra cứu nếu có productId trong URL (từ QR code)
+        async function autoSearchFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const productId = urlParams.get('productId');
+            
+            if (productId) {
+                console.log('🔍 Tự động tra cứu từ URL:', productId);
+                
+                // Điền vào ô tìm kiếm
+                document.getElementById('productId').value = productId;
+                
+                // Đợi WebSocket kết nối (nếu chưa)
+                await new Promise(resolve => {
+                    if (socket && socket.connected) {
+                        resolve();
+                    } else {
+                        const checkInterval = setInterval(() => {
+                            if (socket && socket.connected) {
+                                clearInterval(checkInterval);
+                                resolve();
+                            }
+                        }, 100);
+                        
+                        // Timeout sau 3 giây
+                        setTimeout(() => {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }, 3000);
+                    }
+                });
+                
+                // Set currentProductId TRƯỚC KHI search
+                currentProductId = productId;
+                
+                // Subscribe vào sản phẩm
+                if (socket && socket.connected) {
+                    socket.emit('subscribe:product', productId);
+                    console.log('📦 Đã subscribe sản phẩm từ URL:', productId);
+                }
+                
+                // Tìm kiếm sản phẩm
+                await searchProduct(productId);
+                
+                // Scroll đến kết quả
+                setTimeout(() => {
+                    const resultDiv = document.getElementById('result');
+                    if (resultDiv) {
+                        resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 500);
+            }
+        }
+
+        // Kiểm tra đăng nhập khi tải trang
+        checkAuth();
+        
+        // Khởi tạo WebSocket connection
+        initWebSocket();
+        
+        // Tự động tra cứu từ URL (sau khi WebSocket init)
+        setTimeout(() => {
+            autoSearchFromURL();
+        }, 500);
+    </script>
+    
+    <!-- Smart Contract Handler -->
+    <script src="js/smart-contract.js"></script>
+</body>
+</html>
