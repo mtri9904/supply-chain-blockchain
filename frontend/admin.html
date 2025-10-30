@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - Blockchain Explorer</title>
+    <title>🔐 Admin - Blockchain Explorer</title>
+    <link rel="stylesheet" href="css/modern-theme.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #f5f5f5;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e3f2fd 100%);
             padding: 20px;
+            min-height: 100vh;
         }
         .navbar {
             background: #1a237e;
@@ -150,7 +152,8 @@
                         </div>
                         
                         <div class="data-section">
-                            <div class="data-item"><strong>Mã sản phẩm:</strong> ${block.data.productId}</div>
+                            <div class="data-item"><strong>Tên sản phẩm:</strong> ${block.data.productName || '-'}</div>
+                            <div class="data-item"><strong>Batch Number:</strong> ${block.data.batchNumber || '-'}</div>
                             <div class="data-item"><strong>Trạng thái:</strong> ${block.data.status}</div>
                             <div class="data-item"><strong>Vị trí:</strong> ${block.data.location}</div>
                             <div class="data-item"><strong>Người thực hiện:</strong> ${block.data.actor}</div>

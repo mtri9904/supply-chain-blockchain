@@ -258,7 +258,9 @@
         <div class="qr-modal-content">
             <h2>📱 Mã QR Sản Phẩm</h2>
             <div class="qr-product-info">
-                <p><strong>Mã sản phẩm:</strong> <span id="qrProductId"></span></p>
+                <p><strong>Tên sản phẩm:</strong> <span id="qrProductName"></span></p>
+                <p><strong>Batch Number:</strong> <span id="qrBatchNumber"></span></p>
+                <p><strong>Mã sản phẩm (cũ):</strong> <span id="qrProductId"></span></p>
                 <p><strong>Block:</strong> #<span id="qrBlockIndex"></span></p>
                 <p><strong>Hash:</strong> <code id="qrBlockHash" style="font-size: 11px;"></code></p>
             </div>
@@ -323,8 +325,11 @@
             // Fields chung cho mọi role
             const commonFields = `
                 <div class="form-group">
-                    <label for="productId">Mã sản phẩm *</label>
-                    <input type="text" id="productId" required placeholder="VD: CAFE-001">
+                    <label for="batchNumber">Mã lô sản phẩm (Batch Number) *</label>
+                    <input type="text" id="batchNumber" required placeholder="Dán Batch Number từ lịch sử (bấm nút Copy)">
+                    <small style="color: #0277bd; font-size: 0.85em;">
+                        💡 Tìm Batch Number trong phần "Lịch sử" bên dưới và bấm nút "📋 Copy"
+                    </small>
                 </div>
                 <div class="form-group">
                     <label for="location">Địa điểm *</label>
@@ -336,7 +341,14 @@
                 case 'farmer':
                     formContent = `
                         <h2>🌾 Ghi nhận thông tin thu hoạch</h2>
-                        ${commonFields}
+                        <div class="form-group">
+                            <label for="productName">Tên sản phẩm *</label>
+                            <input type="text" id="productName" required placeholder="VD: Cà phê Arabica, Gạo ST25">
+                        </div>
+                        <div class="form-group">
+                            <label for="location">Địa điểm *</label>
+                            <input type="text" id="location" required placeholder="Nhập địa điểm hiện tại">
+                        </div>
                         <div class="form-group">
                             <label for="harvestDate">Ngày thu hoạch *</label>
                             <input type="date" id="harvestDate" required>
@@ -365,12 +377,14 @@
                         <h2>🚚 Cập nhật vận chuyển</h2>
                         ${commonFields}
                         <div class="form-group">
-                            <label for="status">Trạng thái *</label>
+                            <label for="status">Trạng thái vận chuyển *</label>
                             <select id="status" required>
+                                <option value="">-- Chọn trạng thái --</option>
                                 <option value="pickup">Đã lấy hàng</option>
                                 <option value="intransit">Đang vận chuyển</option>
                                 <option value="delivered">Đã giao hàng</option>
                             </select>
+                            <small style="color: #666; font-size: 0.9em;">Mỗi lần thay đổi trạng thái sẽ tạo 1 block mới</small>
                         </div>
                         <div class="form-group">
                             <label for="fromLocation">Điểm lấy hàng *</label>
@@ -399,10 +413,6 @@
                                 <option value="grinding">Xay</option>
                                 <option value="packaging">Đóng gói</option>
                             </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="batchNumber">Số lô *</label>
-                            <input type="text" id="batchNumber" required>
                         </div>
                         <div class="form-group">
                             <label for="temperature">Nhiệt độ xử lý (°C)</label>
@@ -467,26 +477,97 @@
         }
 
 
-        async function submitForm() {
-            const formData = {};
-            const inputs = document.querySelectorAll('#inputSection input, #inputSection select, #inputSection textarea');
-            inputs.forEach(input => {
-                if (input.value) {
-                    formData[input.id] = input.value;
-                }
+        // ========== HÀM COPY BATCH NUMBER ==========
+        function copyBatchNumber(batchNumber) {
+            navigator.clipboard.writeText(batchNumber).then(() => {
+                alert(`✅ Đã copy Batch Number:\n${batchNumber}`);
+            }).catch(err => {
+                console.error('❌ Lỗi copy:', err);
+                // Fallback cho trình duyệt cũ
+                const textarea = document.createElement('textarea');
+                textarea.value = batchNumber;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                alert(`✅ Đã copy Batch Number:\n${batchNumber}`);
             });
+        }
 
-            formData.actor = currentUser.username;
-            formData.role = currentUser.role;
-
+        // ========== HÀM KÝ DỮ LIỆU BẰNG PRIVATE KEY ==========
+        function signData(data) {
+            const privateKeyPEM = localStorage.getItem('privateKey');
+            const user = JSON.parse(localStorage.getItem('user'));
+            
+            if (!privateKeyPEM || !user || !user.publicKey) {
+                console.warn('⚠️ Không có private key hoặc public key. Không ký được giao dịch.');
+                return null;
+            }
+            
             try {
+                // Sử dụng jsrsasign để ký
+                const sig = new KJUR.crypto.Signature({alg: "SHA256withRSA"});
+                sig.init(privateKeyPEM);
+                sig.updateString(JSON.stringify(data));
+                const signature = sig.sign();
+                
+                console.log('✅ Đã ký giao dịch thành công');
+                return signature; // Hex string
+            } catch (error) {
+                console.error('❌ Lỗi khi ký dữ liệu:', error);
+                return null;
+            }
+        }
+
+        async function submitForm() {
+            // Disable nút submit để tránh double-click
+            const submitBtn = document.querySelector('.submit-btn');
+            if (submitBtn.disabled) {
+                console.log('⚠️ Đang xử lý, vui lòng đợi...');
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            submitBtn.style.opacity = '0.6';
+            submitBtn.style.cursor = 'not-allowed';
+            const originalText = submitBtn.textContent;
+            submitBtn.textContent = '⏳ Đang xử lý...';
+            
+            try {
+                const formData = {};
+                const inputs = document.querySelectorAll('#inputSection input, #inputSection select, #inputSection textarea');
+                inputs.forEach(input => {
+                    if (input.value) {
+                        formData[input.id] = input.value;
+                    }
+                });
+
+                formData.actor = currentUser.username;
+                formData.role = currentUser.role;
+                
+                // Validate shipper status
+                if (currentUser.role === 'shipper' && !formData.status) {
+                    alert('⚠️ Vui lòng chọn trạng thái vận chuyển!');
+                    return;
+                }
+
+                // ========== KÝ GIAO DỊCH ==========
+                const user = JSON.parse(localStorage.getItem('user'));
+                const signature = signData(formData);
+                
+                const payload = {
+                    data: formData,
+                    signature: signature,
+                    publicKey: user ? user.publicKey : null
+                };
+
                 const response = await fetch(`${window.API_URL}/api/record`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${localStorage.getItem('token')}`
                     },
-                    body: JSON.stringify(formData)
+                    body: JSON.stringify(payload)
                 });
 
                 console.log('📡 Response status:', response.status);
@@ -519,7 +600,7 @@
                 console.log('🔍 Có QR Code?', !!data.data?.qrCode);
                 console.log('👤 User role:', currentUser.role);
                 
-                                // Hiển thị thông báo thành công (cho tất cả role)
+                // Hiển thị thông báo thành công (cho tất cả role)
                 if (data.data && data.data.qrCode) {
                     alert('✅ Thông tin đã được ghi nhận thành công!\n📱 QR Code đã được tạo và lưu vào lịch sử.');
                 } else {
@@ -555,6 +636,14 @@
                 }
                 
                 alert(errorMessage);
+            } finally {
+                // Re-enable nút submit
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.style.opacity = '1';
+                    submitBtn.style.cursor = 'pointer';
+                    submitBtn.textContent = originalText;
+                }
             }
         }
 
@@ -603,8 +692,25 @@
                     }
 
                     let html = '';
-                    data.forEach(item => {
+                    
+                    // Map trạng thái sang tiếng Việt
+                    const statusVNMap = {
+                        'pickup': 'Đã lấy hàng',
+                        'intransit': 'Đang vận chuyển',
+                        'delivered': 'Đã giao hàng'
+                    };
+                    
+                    data.forEach((item, index) => {
                         const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
+                        
+                        // Map status sang tiếng Việt nếu là shipper
+                        let displayStatus = item.status;
+                        if (item.role === 'shipper' && item.transportStatus) {
+                            displayStatus = statusVNMap[item.transportStatus] || item.status;
+                            if (item.fromLocation && item.toLocation) {
+                                displayStatus += ` - Từ: ${item.fromLocation} → ${item.toLocation}`;
+                            }
+                        }
                         
                         // Tạo phần QR code nếu có
                         let qrSection = '';
@@ -613,20 +719,49 @@
                                 <div class="timeline-qr">
                                     <img src="${item.qrCode}" 
                                          alt="QR Code" 
-                                         onclick="enlargeQR('${item.qrCode}', '${item.productId}')"
+                                         onclick="enlargeQR('${item.qrCode}', '${item.batchNumber || ''}', '${item.productName || ''}')"
                                          title="Click để phóng to QR code">
                                     <p>📱 Quét QR</p>
                                 </div>
                             `;
                         }
                         
+                        // Nút cập nhật trạng thái cho shipper - CHỈ HIỆN Ở BLOCK MỚI NHẤT
+                        let updateButton = '';
+                        if (currentUser.role === 'shipper' && item.role === 'shipper' && item.transportStatus !== 'delivered') {
+                            // Tìm block shipper mới nhất (index nhỏ nhất vì data đã sort desc)
+                            const shipperBlocks = data.filter(d => d.role === 'shipper');
+                            const isLatestShipperBlock = shipperBlocks.length > 0 && shipperBlocks[0].timestamp === item.timestamp;
+                            
+                            if (isLatestShipperBlock) {
+                                const nextStatus = item.transportStatus === 'pickup' ? 'intransit' : 'delivered';
+                                const nextStatusVN = statusVNMap[nextStatus];
+                                updateButton = `
+                                    <button onclick="updateShippingStatus('${item.batchNumber}', '${nextStatus}', '${item.fromLocation || ''}', '${item.toLocation || ''}')" 
+                                            class="update-status-btn"
+                                            style="margin-top: 10px; padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; transition: 0.3s;">
+                                        🚚 Cập nhật → ${nextStatusVN}
+                                    </button>
+                                `;
+                            }
+                        }
+                        
                         html += `
                             <div class="timeline-item">
                                 <div class="timeline-content">
-                                    <div class="timeline-status">📍 ${item.status || getRoleAction(currentUser.role)}</div>
+                                    <div class="timeline-status">📍 ${displayStatus}</div>
                                     <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
-                                    <div class="timeline-info"><strong>📦 Sản phẩm:</strong> ${item.productId}</div>
+                                    <div class="timeline-info"><strong>📦 Tên sản phẩm:</strong> ${item.productName || '-'}</div>
+                                    <div class="timeline-info" style="display: flex; align-items: center; gap: 10px;">
+                                        <strong>🏷️ Batch Number:</strong> 
+                                        <code style="background: #f0f0f0; padding: 4px 8px; border-radius: 4px; font-size: 12px; flex: 1;">${item.batchNumber || '-'}</code>
+                                        ${item.batchNumber ? `<button onclick="copyBatchNumber('${item.batchNumber}')" 
+                                                style="background: #0277bd; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                                📋 Copy
+                                            </button>` : ''}
+                                    </div>
                                     <div class="timeline-info"><strong>📍 Vị trí:</strong> ${item.location}</div>
+                                    ${updateButton}
                                 </div>
                                 ${qrSection}
                             </div>
@@ -669,17 +804,27 @@
             try {
                 const response = await fetch(`${window.API_URL}/api/blockchain/stats`);
                 const result = await response.json();
-                
+
                 if (result.success) {
                     const stats = result.data;
                     const validText = stats.isValid ? '✅ Hợp lệ' : '❌ Không hợp lệ';
+                    
+                    // ========== THÊM THÔNG TIN CHỮ KÝ SỐ ==========
+                    let signatureInfo = '';
+                    if (stats.signedBlocks !== undefined) {
+                        signatureInfo = `\n\n🔐 CHỮ KÝ SỐ:\n` +
+                                      `- Block có chữ ký: ${stats.signedBlocks}\n` +
+                                      `- Block chưa ký: ${stats.unsignedBlocks}\n` +
+                                      `- Tỷ lệ bảo mật: ${stats.signaturePercentage}%`;
+                    }
                     
                     alert(`📊 THỐNG KÊ BLOCKCHAIN\n\n` +
                           `Tổng số Block: ${stats.totalBlocks}\n` +
                           `Độ khó Mining: ${stats.difficulty} (${stats.difficulty} chữ số 0)\n` +
                           `Giao dịch đang chờ: ${stats.pendingTransactions}\n` +
-                          `Trạng thái: ${validText}\n\n` +
-                          `BLOCK MỚI NHẤT:\n` +
+                          `Trạng thái: ${validText}` +
+                          signatureInfo +
+                          `\n\nBLOCK MỚI NHẤT:\n` +
                           `- Index: #${stats.latestBlock.index}\n` +
                           `- Hash: ${stats.latestBlock.hash.substring(0, 20)}...\n` +
                           `- Thời gian: ${new Date(stats.latestBlock.timestamp).toLocaleString('vi-VN')}`);
@@ -697,7 +842,8 @@
                 const confirmValidate = confirm('🔍 Xác thực blockchain sẽ kiểm tra:\n' +
                                                '• Tính toàn vẹn của mỗi block\n' +
                                                '• Liên kết giữa các block\n' +
-                                               '• Proof of Work (PoW)\n\n' +
+                                               '• Proof of Work (PoW)\n' +
+                                               '• Chữ ký số (Digital Signature)\n\n' +
                                                'Tiếp tục?');
                 
                 if (!confirmValidate) return;
@@ -723,11 +869,29 @@
                     const icon = result.isValid ? '✅' : '❌';
                     const message = result.message;
                     
+                    // ========== THÊM THÔNG TIN CHỮ KÝ SỐ ==========
+                    let signatureInfo = '';
+                    if (result.stats.verifiedSignatures !== undefined) {
+                        signatureInfo = `\n\n🔐 KIỂM TRA CHỮ KÝ SỐ:\n` +
+                                      `✅ Chữ ký hợp lệ: ${result.stats.verifiedSignatures}\n` +
+                                      `❌ Chữ ký không hợp lệ: ${result.stats.invalidSignatures}`;
+                        
+                        if (result.stats.signatureWarnings && result.stats.signatureWarnings.length > 0) {
+                            signatureInfo += `\n\n⚠️ CẢNH BÁO:\n` + 
+                                           result.stats.signatureWarnings.slice(0, 3).join('\n');
+                            if (result.stats.signatureWarnings.length > 3) {
+                                signatureInfo += `\n... và ${result.stats.signatureWarnings.length - 3} cảnh báo khác`;
+                            }
+                        }
+                    }
+                    
                     alert(`${icon} KẾT QUẢ XÁC THỰC\n\n` +
                           `${message}\n\n` +
+                          `📊 THỐNG KÊ:\n` +
                           `Tổng số block: ${result.stats.totalBlocks}\n` +
                           `Độ khó: ${result.stats.difficulty}\n` +
-                          `Latest Hash: ${result.stats.latestBlockHash.substring(0, 20)}...`);
+                          `Latest Hash: ${result.stats.latestBlockHash.substring(0, 20)}...` +
+                          signatureInfo);
                 } else {
                     throw new Error(result.message);
                 }
@@ -792,19 +956,23 @@
         }
 
         // Phóng to QR code (từ lịch sử)
-        function enlargeQR(qrCodeData, productId) {
-            console.log('🔍 Phóng to QR cho sản phẩm:', productId);
+        function enlargeQR(qrCodeData, batchNumber, productName) {
+            console.log('🔍 Phóng to QR cho batch:', batchNumber, 'sản phẩm:', productName);
             
             const modal = document.getElementById('qrModal');
             const qrImage = document.getElementById('qrCodeImage');
             const productIdEl = document.getElementById('qrProductId');
+            const batchNumberEl = document.getElementById('qrBatchNumber');
+            const productNameEl = document.getElementById('qrProductName');
             const blockIndexEl = document.getElementById('qrBlockIndex');
             const blockHashEl = document.getElementById('qrBlockHash');
 
             // Set thông tin
-            productIdEl.textContent = productId;
-            blockIndexEl.textContent = 'Xem từ lịch sử';
-            blockHashEl.textContent = 'QR Code đã lưu';
+            if (productIdEl) productIdEl.textContent = batchNumber || '';
+            if (batchNumberEl) batchNumberEl.textContent = batchNumber || '';
+            if (productNameEl) productNameEl.textContent = productName || '';
+            if (blockIndexEl) blockIndexEl.textContent = 'Xem từ lịch sử';
+            if (blockHashEl) blockHashEl.textContent = 'QR Code đã lưu';
             qrImage.src = qrCodeData;
 
             // Hiển thị modal
@@ -815,12 +983,12 @@
         // Tải xuống QR Code
         function downloadQRCode() {
             const qrImage = document.getElementById('qrCodeImage');
-            const productId = document.getElementById('qrProductId').textContent;
+            const batchNumber = document.getElementById('qrBatchNumber')?.textContent || 'batch';
             
             // Tạo link download
             const link = document.createElement('a');
             link.href = qrImage.src;
-            link.download = `QR_${productId.replace(/\s+/g, '_')}.png`;
+            link.download = `QR_${batchNumber.replace(/\s+/g, '_')}.png`;
             link.click();
             
             // Hiển thị thông báo thành công (không dùng alert để không block modal)
@@ -853,6 +1021,73 @@
         }
 
 
+        // Hàm cập nhật trạng thái vận chuyển
+        async function updateShippingStatus(batchNumber, newStatus, fromLocation, toLocation) {
+            const statusVNMap = {
+                'pickup': 'Đã lấy hàng',
+                'intransit': 'Đang vận chuyển',
+                'delivered': 'Đã giao hàng'
+            };
+            
+            if (!confirm(`Xác nhận cập nhật trạng thái sang "${statusVNMap[newStatus]}"?`)) return;
+            
+            // Disable tất cả các nút cập nhật
+            const updateBtns = document.querySelectorAll('.update-status-btn');
+            updateBtns.forEach(btn => {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.textContent = '⏳ Đang cập nhật...';
+            });
+            
+            try {
+                const formData = {
+                    batchNumber: batchNumber,
+                    status: newStatus,
+                    fromLocation: fromLocation,
+                    toLocation: toLocation,
+                    location: toLocation,
+                    actor: currentUser.username,
+                    role: currentUser.role
+                };
+                
+                // ========== KÝ GIAO DỊCH ==========
+                const user = JSON.parse(localStorage.getItem('user'));
+                const signature = signData(formData);
+                
+                const payload = {
+                    data: formData,
+                    signature: signature,
+                    publicKey: user ? user.publicKey : null
+                };
+                
+                const response = await fetch(`${window.API_URL}/api/record`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok || !data.success) {
+                    alert(`❌ Lỗi: ${data.message || 'Không thể cập nhật'}`);
+                    return;
+                }
+                
+                alert(`✅ Đã cập nhật thành công sang "${statusVNMap[newStatus]}"!`);
+                loadUserHistory();
+            } catch (error) {
+                alert(`❌ Lỗi: ${error.message}`);
+                // Re-enable nút nếu có lỗi
+                updateBtns.forEach(btn => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
+            }
+        }
+
         // Kiểm tra đăng nhập khi tải trang
         checkAuth();
     </script>
@@ -862,5 +1097,8 @@
     
     <!-- Auto-detect API URL -->
     <script src="js/config.js"></script>
+    
+    <!-- jsrsasign for RSA signing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsrsasign/11.1.0/jsrsasign-all-min.js"></script>
 </body>
 </html>

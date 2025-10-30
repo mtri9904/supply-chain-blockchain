@@ -2,27 +2,70 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const SupplyChainContract = require('./SmartContract');
+const { v4: uuidv4 } = require('uuid'); // Thêm thư viện UUID
 
 class Block {
     constructor(timestamp, data, previousHash = '') {
         this.index = 0; // Sẽ được set khi thêm vào chain
         this.timestamp = timestamp;
-        this.data = data;
+        // --- BẮT ĐẦU THÊM TRƯỜNG MỚI ---
+        this.data = {
+            uniqueId: data.uniqueId || uuidv4(), // uniqueId cho sản phẩm
+            batchNumber: data.batchNumber || this.generateBatchNumber(data),
+            gtin: data.gtin || this.generateGTIN(data),
+            ...data
+        };
+        // --- KẾT THÚC THÊM TRƯỜNG MỚI ---
         this.previousHash = previousHash;
         this.nonce = 0; // Số dùng cho mining
         this.hash = this.calculateHash();
     }
 
     calculateHash() {
+        // ========== QUAN TRỌNG: Loại bỏ các field được thêm SAU KHI mining ==========
+        // signature, publicKey, và qrCode được thêm AFTER mining
+        // Nên hash chỉ tính từ data GỐC
+        const dataForHash = {...this.data};
+        delete dataForHash.signature;
+        delete dataForHash.publicKey;
+        delete dataForHash.qrCode;
+        
         return crypto.createHash('sha256')
             .update(
                 this.index + 
                 this.timestamp + 
                 this.previousHash + 
-                JSON.stringify(this.data) + 
+                JSON.stringify(dataForHash) + 
                 this.nonce
             )
             .digest('hex');
+    }
+
+    // Sinh batchNumber dựa trên tên sản phẩm và ngày (có thể tùy chỉnh chuẩn hóa theo GS1)
+    generateBatchNumber(data) {
+        // Tạo chuẩn BATCH-[14 số GTIN]-YYYYMMDD(-n nếu trùng)
+        let gtin = data.gtin;
+        if (!gtin) gtin = this.generateGTIN(data);
+        gtin = (gtin+'').padStart(14,'0').slice(0,14);
+        const dateObj = data.timestamp ? new Date(data.timestamp) : new Date();
+        const datePart = dateObj.toISOString().slice(0,10).replace(/-/g, '');
+        let candidate = `BATCH-${gtin}-${datePart}`;
+        let index = 1;
+        // Nếu this.chain chưa có, trả ngay batch đầu tiên
+        const allBatches = (this.chain && Array.isArray(this.chain)) ? this.chain.map(b => b.data?.batchNumber || '') : [];
+        while (allBatches.includes(candidate)) {
+            candidate = `BATCH-${gtin}-${datePart}-${index++}`;
+        }
+        return candidate;
+    }
+
+    // Sinh GTIN giả lập (chuỗi số), trong thực tế lấy từ hệ thống quản lý barcode chuẩn quốc tế
+    generateGTIN(data) {
+        // Ghép tên + ngày + random short,
+        if (!data.productName || !data.timestamp) return '999999' + Math.floor(Math.random()*1e6);
+        const clean = data.productName.replace(/[^A-Z0-9]/gi,'').toUpperCase();
+        const date = new Date(data.timestamp).getTime().toString().slice(-7);
+        return ('8' + clean.charCodeAt(0) + date).slice(0,13).padEnd(13, '1');
     }
 
     // Mining: Tìm hash thỏa mãn difficulty (số 0 đầu tiên)
@@ -79,13 +122,13 @@ class Blockchain {
                 const data = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
                 
                 // Khôi phục chain từ file
+                // QUAN TRỌNG: Preserve exact data từ file để hash không thay đổi
                 this.chain = data.chain.map(blockData => {
-                    const block = new Block(
-                        blockData.timestamp,
-                        blockData.data,
-                        blockData.previousHash
-                    );
+                    const block = Object.create(Block.prototype);
                     block.index = blockData.index;
+                    block.timestamp = blockData.timestamp;
+                    block.data = blockData.data; // Giữ nguyên data từ file, KHÔNG gọi constructor
+                    block.previousHash = blockData.previousHash;
                     block.nonce = blockData.nonce;
                     block.hash = blockData.hash;
                     return block;
@@ -133,7 +176,7 @@ class Blockchain {
     createGenesisBlock() {
         console.log('\n🌟 Tạo Genesis Block...');
         const genesisBlock = new Block(Date.now(), { 
-            productId: "GENESIS", 
+            productName: "GENESIS", 
             status: "Khởi tạo blockchain", 
             location: "System",
             actor: "System" 
@@ -285,18 +328,18 @@ class Blockchain {
         return true;
     }
 
-    getProduct(productId) {
-        // Tìm kiếm CHÍNH XÁC (phân biệt hoa thường)
-        const searchTerm = productId.trim();
-        
+    getProduct(batchNumber) {
+        // Tìm kiếm CHÍNH XÁC batchNumber (phân biệt hoa thường)
+        const searchTerm = batchNumber.trim();
         return this.chain
             .slice(1) // bỏ qua genesis block
             .filter(block => {
-                if (!block.data.productId) return false;
-                const blockProductId = block.data.productId.trim();
-                return blockProductId === searchTerm; // So sánh chính xác, phân biệt hoa thường
+                if (!block.data.batchNumber) return false;
+                const blockBatch = block.data.batchNumber.trim();
+                return blockBatch === searchTerm;
             })
             .map(block => ({
+                batchNumber: block.data.batchNumber,
                 blockIndex: block.index,
                 hash: block.hash,
                 nonce: block.nonce,
@@ -306,31 +349,32 @@ class Blockchain {
     }
 
     // Kiểm tra sản phẩm đã tồn tại chưa (phân biệt hoa thường)
-    productExists(productId) {
-        const searchTerm = productId.trim();
-        
-        return this.chain
-            .slice(1) // bỏ qua genesis block
-            .some(block => {
-                if (!block.data.productId) return false;
-                const blockProductId = block.data.productId.trim();
-                return blockProductId === searchTerm; // So sánh chính xác
-            });
+    productExists(data) {
+        const { productName, location, harvestDate, quantity, quality } = data;
+        return this.chain.slice(1).some(block => {
+            // So sánh tất cả thuộc tính chính
+            const d = block.data;
+            return d.productName === productName &&
+                d.location === location &&
+                d.harvestDate === harvestDate &&
+                d.quantity === quantity &&
+                (typeof quality === 'undefined' || d.quality === quality);
+        });
     }
 
-    // Kiểm tra sản phẩm đã được farmer tạo chưa (phân biệt hoa thường)
-    isProductInitializedByFarmer(productId) {
-        const searchTerm = productId.trim();
+    // Kiểm tra sản phẩm đã được farmer tạo chưa (phân biệt hoa thường) - TÌM THEO BATCHNUMBER
+    isProductInitializedByFarmer(batchNumber) {
+        const searchTerm = batchNumber.trim();
         
         return this.chain
             .slice(1)
             .some(block => {
-                if (!block.data.productId) return false;
-                const blockProductId = block.data.productId.trim();
+                if (!block.data.batchNumber) return false;
+                const blockBatchNumber = block.data.batchNumber.trim();
                 // Kiểm tra role từ block.data.role (chính) hoặc block.data.details.role (backup)
                 const isFromFarmer = block.data.role === 'farmer' || 
                                    (block.data.details && block.data.details.role === 'farmer');
-                return blockProductId === searchTerm && isFromFarmer; // So sánh chính xác
+                return blockBatchNumber === searchTerm && isFromFarmer; // So sánh chính xác
             });
     }
 
@@ -378,6 +422,70 @@ class Blockchain {
     // Kiểm tra quyền hạn
     hasPermission(role, action) {
         return this.smartContract.hasPermission(role, action);
+    }
+
+    // Tìm thông tin sản phẩm từ batchNumber
+    getProductInfoByBatchNumber(batchNumber) {
+        // Trả về thông tin block đầu tiên có batchNumber này
+        const block = this.chain.find(b => b.data && b.data.batchNumber === batchNumber);
+        if (!block || !block.data) return null;
+        return {
+            productName: block.data.productName,
+            gtin: block.data.gtin,
+            ...block.data
+        };
+    }
+
+    // Kiểm tra trạng thái vận chuyển hiện tại của batch
+    getShippingStatus(batchNumber) {
+        const blocks = this.chain.filter(b => 
+            b.data && 
+            b.data.batchNumber === batchNumber && 
+            b.data.role === 'shipper'
+        );
+        
+        if (blocks.length === 0) return null;
+        
+        // Lấy block shipper mới nhất
+        const latestShipperBlock = blocks[blocks.length - 1];
+        return latestShipperBlock.data.status;
+    }
+
+    // Kiểm tra workflow có hợp lệ không
+    canRoleUpdateBatch(batchNumber, role) {
+        const blocks = this.chain.filter(b => b.data && b.data.batchNumber === batchNumber);
+        
+        if (blocks.length === 0) return { allowed: false, reason: 'Batch không tồn tại' };
+        
+        // Kiểm tra farmer đã tạo chưa
+        const farmerBlock = blocks.find(b => b.data.role === 'farmer');
+        if (!farmerBlock) return { allowed: false, reason: 'Farmer chưa tạo sản phẩm' };
+        
+        if (role === 'shipper') {
+            // Shipper được cập nhật nhưng đã check ở ngoài (server.js)
+            return { allowed: true };
+        }
+        
+        if (role === 'factory') {
+            // Factory chỉ được cập nhật khi shipper đã "delivered"
+            const shippingStatus = this.getShippingStatus(batchNumber);
+            console.log('🔍 Factory check - Shipping status:', shippingStatus);
+            if (shippingStatus !== 'delivered') {
+                return { allowed: false, reason: 'Shipper chưa giao hàng. Trạng thái hiện tại: "' + (shippingStatus || 'chưa vận chuyển') + '", cần "delivered"' };
+            }
+            return { allowed: true };
+        }
+        
+        if (role === 'retailer') {
+            // Retailer chỉ được cập nhật khi factory đã xử lý xong
+            const factoryBlock = blocks.find(b => b.data.role === 'factory');
+            if (!factoryBlock) {
+                return { allowed: false, reason: 'Factory chưa xử lý sản phẩm' };
+            }
+            return { allowed: true };
+        }
+        
+        return { allowed: true };
     }
 }
 

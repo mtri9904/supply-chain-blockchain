@@ -7,6 +7,9 @@ const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const QRCode = require('qrcode');
 const { Blockchain } = require('./MyBlockchain');
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+const NodeRSA = require('node-rsa');
 require('dotenv').config();
 
 // Tự động phát hiện IP mạng WiFi
@@ -268,20 +271,43 @@ app.post('/register', async (req, res) => {
             return res.status(400).json({ message: 'Username đã tồn tại' });
         }
 
+        // ========== TẠO CẶP KHÓA RSA ==========
+        console.log('🔐 Tạo cặp khóa RSA cho user:', username);
+        const key = new NodeRSA({b: 2048}); // 2048-bit key
+        const publicKey = key.exportKey('public');
+        const privateKey = key.exportKey('private');
+        
+        // ========== MÃ HÓA PRIVATE KEY BẰNG PASSWORD ==========
+        const algorithm = 'aes-256-cbc';
+        const keyBuffer = crypto.scryptSync(password, 'salt', 32); // Derive key từ password
+        const iv = crypto.randomBytes(16);
+        const cipher = crypto.createCipheriv(algorithm, keyBuffer, iv);
+        
+        let encryptedPrivateKey = cipher.update(privateKey, 'utf8', 'hex');
+        encryptedPrivateKey += cipher.final('hex');
+        encryptedPrivateKey = iv.toString('hex') + ':' + encryptedPrivateKey; // Lưu kèm IV
+        
+        console.log('✅ Đã mã hóa private key');
+
         // Mã hóa password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Thêm user mới
+        // Thêm user mới VÀ KHÓA
         await pool.request()
             .input('username', sql.VarChar, username)
             .input('password_hash', sql.VarChar, hashedPassword)
             .input('role', sql.VarChar, role)
-            .query('INSERT INTO users (username, password_hash, role) VALUES (@username, @password_hash, @role)');
+            .input('publicKey', sql.NVarChar(sql.MAX), publicKey)
+            .input('encryptedPrivateKey', sql.NVarChar(sql.MAX), encryptedPrivateKey)
+            .query('INSERT INTO users (username, password_hash, role, publicKey, encryptedPrivateKey) VALUES (@username, @password_hash, @role, @publicKey, @encryptedPrivateKey)');
 
-        res.status(201).json({ message: 'Đăng ký thành công' });
+        res.status(201).json({ 
+            message: 'Đăng ký thành công',
+            publicKey: publicKey // Trả về public key luôn
+        });
     } catch (error) {
         console.error('Lỗi đăng ký:', error);
-        res.status(500).json({ message: 'Lỗi server' });
+        res.status(500).json({ message: 'Lỗi server: ' + error.message });
     }
 });
 
@@ -291,7 +317,7 @@ app.post('/login', async (req, res) => {
         const { username, password } = req.body;
         const pool = await sql.connect(config);
         
-        // Tìm user
+        // Tìm user VÀ KHÓA
         const result = await pool.request()
             .input('username', sql.VarChar, username)
             .query('SELECT * FROM users WHERE username = @username');
@@ -302,6 +328,30 @@ app.post('/login', async (req, res) => {
             return res.status(401).json({ message: 'Thông tin đăng nhập không đúng' });
         }
 
+        // ========== GIẢI MÃ PRIVATE KEY ==========
+        let privateKey = null;
+        if (user.encryptedPrivateKey && user.publicKey) {
+            try {
+                console.log('🔓 Giải mã private key cho user:', username);
+                const algorithm = 'aes-256-cbc';
+                const keyBuffer = crypto.scryptSync(password, 'salt', 32);
+                
+                // Tách IV và encrypted data
+                const parts = user.encryptedPrivateKey.split(':');
+                const iv = Buffer.from(parts[0], 'hex');
+                const encryptedData = parts[1];
+                
+                const decipher = crypto.createDecipheriv(algorithm, keyBuffer, iv);
+                privateKey = decipher.update(encryptedData, 'hex', 'utf8');
+                privateKey += decipher.final('utf8');
+                
+                console.log('✅ Đã giải mã private key thành công');
+            } catch (decryptError) {
+                console.error('❌ Lỗi giải mã private key:', decryptError.message);
+                // Không trả về lỗi, chỉ log. User vẫn đăng nhập được nhưng không có privateKey
+            }
+        }
+
         // Tạo JWT token
         const token = jwt.sign(
             { username: user.username, role: user.role },
@@ -309,10 +359,19 @@ app.post('/login', async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        res.json({ token, username: user.username, role: user.role });
+        // Trả về TOKEN, USER INFO, VÀ PRIVATE KEY
+        res.json({ 
+            token, 
+            user: {
+                username: user.username, 
+                role: user.role,
+                publicKey: user.publicKey || null
+            },
+            privateKey: privateKey // Private key đã giải mã
+        });
     } catch (error) {
         console.error('Lỗi đăng nhập:', error);
-        res.status(500).json({ message: 'Lỗi server' });
+        res.status(500).json({ message: 'Lỗi server: ' + error.message });
     }
 });
 
@@ -331,73 +390,166 @@ app.post('/api/record', authenticateToken, async (req, res) => {
             });
         }
 
-        const { productId, location } = req.body;
+        // ========== VERIFY SIGNATURE (HYBRID MODEL) ==========
+        let actualData = req.body;
+        let signature = null;
+        let senderPublicKey = null;
         
-        // Validate required fields
-        if (!productId || !location) {
-            console.log('❌ Missing required fields');
-            return res.status(400).json({
-                success: false,
-                message: 'Thiếu thông tin bắt buộc',
-                required: ['productId', 'location']
-            });
+        // Check if payload contains signature (new format with digital signature)
+        if (req.body.data && req.body.signature && req.body.publicKey) {
+            console.log('🔐 Phát hiện giao dịch có chữ ký số - Bắt đầu verify...');
+            
+            actualData = req.body.data;
+            signature = req.body.signature;
+            senderPublicKey = req.body.publicKey;
+            
+            // Verify signature bằng NodeRSA
+            try {
+                const key = new NodeRSA();
+                key.importKey(senderPublicKey, 'public');
+                
+                const dataString = JSON.stringify(actualData);
+                const isValid = key.verify(
+                    Buffer.from(dataString, 'utf8'),
+                    Buffer.from(signature, 'hex'),
+                    'utf8',
+                    'hex'
+                );
+                
+                if (!isValid) {
+                    console.log('❌ Chữ ký không hợp lệ!');
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Chữ ký số không hợp lệ. Giao dịch bị từ chối!',
+                        error: 'INVALID_SIGNATURE'
+                    });
+                }
+                
+                console.log('✅ Chữ ký hợp lệ! Giao dịch được chấp nhận.');
+                
+                // (Tùy chọn) Verify xem publicKey có khớp với user trong DB không
+                try {
+                    const pool = await sql.connect(config);
+                    const userRecord = await pool.request()
+                        .input('username', sql.VarChar, req.user.username)
+                        .query('SELECT publicKey FROM users WHERE username = @username');
+                    
+                    if (userRecord.recordset.length > 0 && userRecord.recordset[0].publicKey) {
+                        const dbPublicKey = userRecord.recordset[0].publicKey;
+                        if (dbPublicKey !== senderPublicKey) {
+                            console.log('⚠️ Public key không khớp với DB! Nghi vấn giả mạo.');
+                            return res.status(400).json({
+                                success: false,
+                                message: 'Public key không khớp với tài khoản. Giao dịch bị từ chối!',
+                                error: 'PUBLIC_KEY_MISMATCH'
+                            });
+                        }
+                        console.log('✅ Public key khớp với DB.');
+                    }
+                } catch (dbError) {
+                    console.error('⚠️ Không thể verify public key với DB:', dbError.message);
+                    // Không block transaction, chỉ warning
+                }
+                
+            } catch (verifyError) {
+                console.error('❌ Lỗi khi verify signature:', verifyError);
+                return res.status(400).json({
+                    success: false,
+                    message: 'Không thể xác minh chữ ký số',
+                    error: verifyError.message
+                });
+            }
+        } else {
+            console.log('⚠️ Giao dịch KHÔNG có chữ ký số (old format hoặc user chưa có keypair)');
+            // Cho phép giao dịch cũ vẫn hoạt động (backward compatible)
         }
 
-        // Kiểm tra xem người dùng có quyền ghi dữ liệu không
-        if (!req.user || !req.user.role) {
-            console.log('❌ Invalid user or role:', req.user);
-            return res.status(403).json({
-                success: false,
-                message: 'Không có quyền ghi dữ liệu'
-            });
-        }
+        // Lấy role từ token
+        const role = req.user.role;
+        
+        const { productName, batchNumber, location } = actualData;
 
-        const role = req.user.role; // Lấy role từ token thay vì từ request body
-
-        // 🤖 SMART CONTRACT VALIDATION: Validate với Smart Contract
-        // Xác định action dựa trên role thay vì dùng mặc định
-        let action = req.body.action;
-        if (!action) {
-            // Tự động xác định action dựa trên role
-            switch(role) {
-                case 'farmer':
-                    action = 'harvest'; // Farmer thực hiện harvest thay vì create_product
-                    break;
-                case 'shipper':
-                    action = 'transport';
-                    break;
-                case 'factory':
-                    action = 'process';
-                    break;
-                case 'retailer':
-                    action = 'sell';
-                    break;
-                default:
-                    action = 'create_product';
+        // Farmer phải nhập productName+location, các role khác chỉ cần batchNumber+location
+        if (role === 'farmer') {
+            if (!productName || !location) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Thiếu thông tin bắt buộc',
+                    required: ['productName', 'location']
+                });
+            }
+        } else {
+            if (!batchNumber || !location) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Thiếu thông tin bắt buộc',
+                    required: ['batchNumber', 'location']
+                });
             }
         }
-        
+
+        // --- Định nghĩa/action ---
+        let action = actualData.action;
+        if (!action) {
+            switch(role) {
+                case 'farmer': action = 'harvest'; break;
+                case 'shipper': action = 'transport'; break;
+                case 'factory': action = 'process'; break;
+                case 'retailer': action = 'sell'; break;
+                default: action = 'create_product';
+            }
+        }
+
+        // Validate & lookup theo batchNumber (với non-farmer)
+        let productInfo = null;
+        if (role !== 'farmer') {
+            productInfo = batchNumber && supplyChain.getProductInfoByBatchNumber(batchNumber);
+            if (!productInfo) {
+                return res.status(400).json({
+                    success: false,
+                    message: `batchNumber '${batchNumber}' không tồn tại trong blockchain. Hãy nhập đúng batchNumber!`
+                });
+            }
+            
+            // Kiểm tra nếu shipper đã delivered thì không cho cập nhật nữa
+            if (role === 'shipper') {
+                const currentStatus = supplyChain.getShippingStatus(batchNumber);
+                if (currentStatus === 'delivered') {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Không thể cập nhật: Đơn hàng đã giao xong rồi!',
+                        hint: 'Batch này đã hoàn tất vận chuyển'
+                    });
+                }
+            }
+            
+            // Kiểm tra workflow
+            const workflowCheck = supplyChain.canRoleUpdateBatch(batchNumber, role);
+            if (!workflowCheck.allowed) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Không thể cập nhật: ${workflowCheck.reason}`,
+                    hint: 'Vui lòng đợi bước trước hoàn thành'
+                });
+            }
+        }
+
         console.log('🔍 Smart Contract validation input:', {
-            role: role,
-            action: action,
-            data: req.body,
+            role,
+            action,
+            data: actualData,
             actor: req.user.username
         });
-        
         try {
-            const validation = supplyChain.validateTransaction(role, action, req.body, req.user.username);
-            
+            const validation = supplyChain.validateTransaction(role, action, actualData, req.user.username);
             if (!validation.success) {
                 console.log('❌ Smart Contract validation failed:', validation.error);
                 return res.status(400).json({
                     success: false,
                     message: 'Smart Contract validation failed',
-                    error: validation.error,
-                    smartContractValidation: validation
+                    error: validation.error
                 });
             }
-
-            console.log('✅ Smart Contract validation passed:', validation.message);
         } catch (validationError) {
             console.error('❌ Smart Contract validation error:', validationError);
             return res.status(500).json({
@@ -407,173 +559,127 @@ app.post('/api/record', authenticateToken, async (req, res) => {
             });
         }
 
-        // ✅ VALIDATION MỚI: Kiểm tra sản phẩm đã được farmer tạo chưa
-        // Farmer được tạo sản phẩm mới, các role khác chỉ được cập nhật sản phẩm đã có
-        if (role !== 'farmer') {
-            const productInitialized = supplyChain.isProductInitializedByFarmer(productId);
-            
-            if (!productInitialized) {
-                console.log(`❌ Sản phẩm "${productId}" chưa được farmer tạo`);
-                console.log(`🔍 Current user role: ${role}, username: ${req.user.username}`);
-                console.log(`🔍 Session ID: ${req.sessionId || 'no-session'}`);
-                
-                return res.status(400).json({
-                    success: false,
-                    message: `Sản phẩm "${productId}" chưa tồn tại trong hệ thống`,
-                    hint: 'Chỉ nông dân (farmer) mới có thể tạo sản phẩm mới. Các role khác chỉ được cập nhật sản phẩm đã có.',
-                    action: 'Vui lòng kiểm tra lại mã sản phẩm hoặc yêu cầu farmer tạo sản phẩm trước.',
-                    debug: {
-                        currentRole: role,
-                        currentUser: req.user.username,
-                        sessionId: req.sessionId || 'no-session',
-                        productExists: supplyChain.productExists(productId),
-                        productInitializedByFarmer: supplyChain.isProductInitializedByFarmer(productId)
-                    }
-                });
-            }
-        } else {
-            // Nếu là farmer, kiểm tra xem sản phẩm đã tồn tại chưa
-            const productExists = supplyChain.productExists(productId);
-            if (productExists) {
-                console.log(`⚠️ Farmer đang cập nhật sản phẩm đã tồn tại: ${productId}`);
-                // Không block, chỉ log warning - farmer có thể cập nhật sản phẩm của mình
+        // Nếu là farmer, kiểm tra tồn tại productId (nhưng vẫn cho phép cập nhật!)
+        if (role === 'farmer') {
+            const exists = supplyChain.productExists(productName); // Changed from productId to productName
+            if (exists) {
+                console.log(`⚠️ Farmer đang cập nhật sản phẩm đã tồn tại: ${productName}`);
             }
         }
 
+        // Status processing (giữ logic cũ cho các role)
         let status = '';
-
-        // Tạo status dựa trên role và validate dữ liệu
         switch(role) {
             case 'farmer':
-                if (!req.body.quantity || !req.body.quality) {
+                if (!actualData.quantity || !actualData.quality) {
                     return res.status(400).json({
                         message: 'Thiếu thông tin cho nông dân',
                         required: ['quantity', 'quality']
                     });
                 }
-                status = `Thu hoạch ${req.body.quantity}kg, Chất lượng: ${req.body.quality}`;
+                status = `Thu hoạch: ${actualData.quantity}kg, Loại: ${actualData.quality}`;
                 break;
-
             case 'shipper':
-                if (!req.body.status || !req.body.fromLocation || !req.body.toLocation) {
+                if (!actualData.fromLocation || !actualData.toLocation || !actualData.status) {
                     return res.status(400).json({
                         message: 'Thiếu thông tin vận chuyển',
-                        required: ['status', 'fromLocation', 'toLocation']
+                        required: ['fromLocation', 'toLocation', 'status']
                     });
                 }
-                status = `Vận chuyển: ${req.body.status}, Từ: ${req.body.fromLocation}, Đến: ${req.body.toLocation}`;
+                // Map status sang tiếng Việt
+                const statusMap = {
+                    'pickup': 'Đã lấy hàng',
+                    'intransit': 'Đang vận chuyển',
+                    'delivered': 'Đã giao hàng'
+                };
+                const vnStatus = statusMap[actualData.status] || actualData.status;
+                status = `${vnStatus} - Từ: ${actualData.fromLocation} → ${actualData.toLocation}`;
                 break;
-
             case 'factory':
-                if (!req.body.processType || !req.body.batchNumber) {
+                if (!actualData.processType || !actualData.batchNumber) {
                     return res.status(400).json({
                         message: 'Thiếu thông tin sản xuất',
                         required: ['processType', 'batchNumber']
                     });
                 }
-                status = `Sản xuất: ${req.body.processType}, Lô: ${req.body.batchNumber}`;
+                status = `Sản xuất: ${actualData.processType}, Lô: ${actualData.batchNumber}`;
                 break;
-
             case 'retailer':
-                if (!req.body.quantity || !req.body.price) {
+                if (!actualData.quantity || !actualData.price) {
                     return res.status(400).json({
                         message: 'Thiếu thông tin bán hàng',
                         required: ['quantity', 'price']
                     });
                 }
-                status = `Bán ${req.body.quantity}kg, Giá: ${req.body.price}VNĐ/kg`;
+                status = `Bán: ${actualData.quantity}kg, Giá ${actualData.price}`;
                 break;
-
-            default:
-                return res.status(400).json({
-                    message: 'Role không hợp lệ'
-                });
         }
 
-        const timestamp = new Date().toISOString();
-        
-        // Tạo QR Code cho sản phẩm TRƯỚC khi mining (chỉ cho farmer - lần tạo đầu tiên)
-        let qrCodeData = null;
+        // Mining/thêm block: farmer theo productId, còn lại theo batchNumber
+        const timestamp = Date.now();
+        let dataForBlock;
         if (role === 'farmer') {
+            dataForBlock = {
+                productName, // Changed from productId to productName
+                location,
+                status,
+                actor: req.user.username,
+                timestamp,
+                role: req.user.role,
+                ...actualData // Dùng actualData thay vì req.body
+            };
+        } else {
+            dataForBlock = {
+                batchNumber,
+                productName: productInfo ? productInfo.productName : (actualData.productName || null), // để hiển thị nếu có
+                location,
+                status,
+                actor: req.user.username,
+                timestamp,
+                role: req.user.role,
+                ...actualData // Dùng actualData thay vì req.body
+            };
+        }
+        
+        // ========== THÊM SIGNATURE VÀO BLOCK (NẾU CÓ) ==========
+        if (signature && senderPublicKey) {
+            dataForBlock.signature = signature;
+            dataForBlock.publicKey = senderPublicKey;
+            console.log('🔐 Đã thêm chữ ký số vào block data');
+        }
+        
+        const newBlock = supplyChain.addBlock(dataForBlock);
+
+        // Sau khi thêm block, nếu chưa có trường qrCode thì sinh và cập nhật vào block ngay
+        if (newBlock && !newBlock.data.qrCode && newBlock.data.batchNumber) {
             try {
-                // Sử dụng IP WiFi tự động phát hiện và port backend
                 const serverIP = process.env.SERVER_IP || wifiIP;
                 const backendPort = process.env.BACKEND_PORT || '5000';
-                const queryURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(productId)}`;
-                
-                // Tạo QR code dạng Data URL (base64)
-                qrCodeData = await QRCode.toDataURL(queryURL, {
-                    width: 300,
-                    margin: 2,
-                    color: {
-                        dark: '#000000',
-                        light: '#FFFFFF'
-                    }
-                });
-                
-                console.log(`📱 Đã tạo QR Code cho sản phẩm: ${productId}`);
-                console.log(`📱 URL trong QR: ${queryURL}`);
-            } catch (qrError) {
-                console.error('❌ Lỗi tạo QR code:', qrError);
-            }
+                const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(newBlock.data.batchNumber)}`;
+                const qrCode = await QRCode.toDataURL(url, { width: 400, margin: 2, color: { dark: '#1a237e', light: '#FFFFFF' }});
+                newBlock.data.qrCode = qrCode;
+                // Lưu lại chuỗi để bất kỳ ai truy lịch sử sau này đều có QR
+                supplyChain.saveBlockchain();
+            } catch (err) { /* bơ lỗi tạo QR cho block không ảnh hưởng logic */ }
         }
-        
-        console.log(`\n⛏️  Mining block mới cho sản phẩm: ${productId}`);
-        const startMining = Date.now();
-        
-        const newBlock = supplyChain.addBlock({
-            productId,
+
+        // Emit realtime với batchNumber
+        const eventData = {
+            batchNumber: dataForBlock.batchNumber,
+            productName: dataForBlock.productName, // Changed from productId to productName
+            blockIndex: newBlock.index,
+            blockHash: newBlock.hash,
             status,
             location,
             actor: req.user.username,
             timestamp,
-            role: req.user.role,
-            action: action,
-            details: {
-                ...req.body,
-                role: req.user.role,
-                recordedAt: timestamp
-            },
-            qrCode: qrCodeData // Lưu QR code vào block data
-        });
-        
-        const miningTime = ((Date.now() - startMining) / 1000).toFixed(2);
-
-        // Emit real-time event cho tất cả clients đang theo dõi sản phẩm này
-        const eventData = {
-            productId: productId,
-            blockIndex: newBlock.index,
-            blockHash: newBlock.hash,
-            status: status,
-            location: location,
-            actor: req.user.username,
-            role: req.user.role,
-            timestamp: timestamp,
-            qrCode: qrCodeData
+            qrCode: dataForBlock.qrCode || null
         };
-        
-        // Broadcast đến clients đang theo dõi sản phẩm này
-        const room = `product:${productId}`;
-        const socketsInRoom = await global.io.in(room).fetchSockets();
-        console.log(`📡 Số clients trong room '${room}':`, socketsInRoom.length);
-        socketsInRoom.forEach(s => console.log(`  - Client: ${s.id}`));
-        
-        // Emit đến room cụ thể
-        global.io.to(room).emit('blockchain:newBlock', eventData);
-        console.log(`📡 Đã emit 'blockchain:newBlock' đến room: ${room}`);
-        
-        // EMIT ĐẾN TẤT CẢ CLIENTS (để test)
-        global.io.emit('blockchain:newBlock', eventData);
-        console.log(`📡 Đã emit 'blockchain:newBlock' đến TẤT CẢ CLIENTS (test)`);
-        
-        // Broadcast đến tất cả clients (cho dashboard tổng quan)
-        global.io.emit('blockchain:update', {
-            type: 'newBlock',
-            productId: productId,
-            blockIndex: newBlock.index
-        });
-        
-        console.log(`📡 Đã emit 'blockchain:update' cho tất cả clients`);
+        const room = dataForBlock.batchNumber ? `product:${dataForBlock.batchNumber}` : undefined;
+        if (room) {
+            global.io.in(room).emit('blockchain:update', eventData);
+        }
+        global.io.emit('blockchain:update', { type: 'newBlock', batchNumber: dataForBlock.batchNumber, blockIndex: newBlock.index });
 
         res.json({
             success: true,
@@ -582,25 +688,25 @@ app.post('/api/record', authenticateToken, async (req, res) => {
                 blockIndex: newBlock.index,
                 blockHash: newBlock.hash,
                 nonce: newBlock.nonce,
-                miningTime: `${miningTime}s`,
+                miningTime: `${((Date.now() - timestamp) / 1000).toFixed(2)}s`,
                 timestamp,
                 difficulty: supplyChain.difficulty,
-                qrCode: qrCodeData, // QR code (chỉ có khi farmer tạo)
-                productId: productId
+                qrCode: newBlock.data.qrCode || null, // trả đúng QR vừa sinh (sau update block)
+                batchNumber: newBlock.data.batchNumber,
+                productName: newBlock.data.productName
             }
         });
     } catch (error) {
         console.error('Lỗi thêm record:', error);
         res.status(500).json({
             success: false,
-            message: 'Lỗi xử lý dữ liệu',
-            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal Server Error'
+            message: 'Lỗi server: ' + error.message
         });
     }
 });
 
 // API lấy lịch sử cập nhật của user
-app.get('/api/user-history/:username', authenticateToken, (req, res) => {
+app.get('/api/user-history/:username', authenticateToken, async (req, res) => {
     try {
         const { username } = req.params;
         if (!username) {
@@ -612,19 +718,45 @@ app.get('/api/user-history/:username', authenticateToken, (req, res) => {
             return res.status(403).json({ message: 'Không có quyền xem lịch sử của người khác' });
         }
 
-        const userRecords = supplyChain.chain
+        const userRecords = await Promise.all(supplyChain.chain
             .slice(1) // Bỏ qua genesis block
             .filter(block => block.data && block.data.actor === username)
-            .map(block => ({
-                productId: block.data.productId,
-                status: block.data.status,
-                location: block.data.location,
-                timestamp: block.timestamp || block.data.timestamp,
-                details: block.data.details || {},
-                qrCode: block.data.qrCode || null // Thêm QR code nếu có
-            }))
-            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sắp xếp mới nhất lên đầu
-        
+            .map(async block => {
+                let qrCode = block.data.qrCode || null;
+                let batchNum = block.data.batchNumber;
+                // Nếu là block của farmer không có batchNumber nhưng có productName,
+                // tìm block đầu cùng productName để lấy batchNumber
+                if (!batchNum && block.data.productName) {
+                    const batchBlock = supplyChain.chain.find(b => b.data && b.data.productName === block.data.productName && b.data.batchNumber);
+                    if (batchBlock) batchNum = batchBlock.data.batchNumber;
+                }
+                // Nếu vẫn chưa có QR code mà đã xác định batchNumber, sinh QR cho batch này
+                if (!qrCode && batchNum) {
+                    try {
+                        const serverIP = process.env.SERVER_IP || wifiIP;
+                        const backendPort = process.env.BACKEND_PORT || '5000';
+                        const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNum)}`;
+                        qrCode = await QRCode.toDataURL(url, { width: 400, margin: 2, color: { dark: '#1a237e', light: '#FFFFFF' }});
+                    } catch(err) { qrCode = null; }
+                }
+                return {
+                    productName: block.data.productName,
+                    batchNumber: batchNum || block.data.batchNumber,
+                    status: block.data.status,
+                    location: block.data.location,
+                    timestamp: block.timestamp || block.data.timestamp,
+                    role: block.data.role,
+                    actor: block.data.actor,
+                    details: block.data.details || {},
+                    qrCode: qrCode,
+                    // Thêm thông tin vận chuyển nếu có
+                    fromLocation: block.data.fromLocation,
+                    toLocation: block.data.toLocation,
+                    transportStatus: block.data.status
+                };
+            })
+        );
+        userRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         res.json(userRecords);
     } catch (error) {
         console.error('Lỗi lấy lịch sử user:', error);
@@ -632,15 +764,15 @@ app.get('/api/user-history/:username', authenticateToken, (req, res) => {
     }
 });
 
-// API lấy lịch sử sản phẩm
-app.get('/api/history/:productId', (req, res) => {
+// API lấy lịch sử sản phẩm THEO BATCHNUMBER
+app.get('/api/history/:batchNumber', (req, res) => {
     try {
-        const { productId } = req.params;
-        if (!productId) {
-            return res.status(400).json({ message: 'Thiếu mã sản phẩm' });
+        const { batchNumber } = req.params;
+        if (!batchNumber) {
+            return res.status(400).json({ message: 'Thiếu batch number' });
         }
 
-        const history = supplyChain.getProduct(productId);
+        const history = supplyChain.getProduct(batchNumber);
         if (!history || history.length === 0) {
             return res.json([]);
         }
@@ -660,6 +792,25 @@ app.get('/api/full-chain', (req, res) => {
 app.get('/api/blockchain/stats', (req, res) => {
     try {
         const stats = supplyChain.getBlockchainStats();
+        
+        // ========== THÊM THỐNG KÊ CHỮ KÝ SỐ ==========
+        let signedBlocks = 0;
+        let unsignedBlocks = 0;
+        
+        supplyChain.chain.forEach(block => {
+            if (block.data && block.data.signature && block.data.publicKey) {
+                signedBlocks++;
+            } else if (block.index !== 0) { // Bỏ qua Genesis block
+                unsignedBlocks++;
+            }
+        });
+        
+        stats.signedBlocks = signedBlocks;
+        stats.unsignedBlocks = unsignedBlocks;
+        stats.signaturePercentage = supplyChain.chain.length > 1 
+            ? Math.round((signedBlocks / (supplyChain.chain.length - 1)) * 100) 
+            : 0;
+        
         res.json({
             success: true,
             data: stats
@@ -680,6 +831,45 @@ app.get('/api/blockchain/validate', (req, res) => {
         console.log('\n🔍 Yêu cầu validate blockchain từ client...');
         const isValid = supplyChain.isChainValid();
         
+        // ========== KIỂM TRA CHỮ KÝ SỐ (TÙY CHỌN) ==========
+        let signatureWarnings = [];
+        let verifiedSignatures = 0;
+        let invalidSignatures = 0;
+        
+        for (let i = 1; i < supplyChain.chain.length; i++) {
+            const block = supplyChain.chain[i];
+            
+            if (block.data && block.data.signature && block.data.publicKey) {
+                try {
+                    const NodeRSA = require('node-rsa');
+                    const key = new NodeRSA();
+                    key.importKey(block.data.publicKey, 'public');
+                    
+                    // Tạo lại data để verify (loại bỏ signature và publicKey)
+                    const dataToVerify = {...block.data};
+                    delete dataToVerify.signature;
+                    delete dataToVerify.publicKey;
+                    
+                    const dataString = JSON.stringify(dataToVerify);
+                    const isSignatureValid = key.verify(
+                        Buffer.from(dataString, 'utf8'),
+                        Buffer.from(block.data.signature, 'hex'),
+                        'utf8',
+                        'hex'
+                    );
+                    
+                    if (isSignatureValid) {
+                        verifiedSignatures++;
+                    } else {
+                        invalidSignatures++;
+                        signatureWarnings.push(`Block #${i}: Chữ ký không hợp lệ`);
+                    }
+                } catch (err) {
+                    signatureWarnings.push(`Block #${i}: Lỗi verify signature - ${err.message}`);
+                }
+            }
+        }
+        
         res.json({
             success: true,
             isValid,
@@ -687,7 +877,10 @@ app.get('/api/blockchain/validate', (req, res) => {
             stats: {
                 totalBlocks: supplyChain.chain.length,
                 difficulty: supplyChain.difficulty,
-                latestBlockHash: supplyChain.getLatestBlock().hash
+                latestBlockHash: supplyChain.getLatestBlock().hash,
+                verifiedSignatures,
+                invalidSignatures,
+                signatureWarnings
             }
         });
     } catch (error) {
@@ -766,73 +959,42 @@ app.post('/api/blockchain/reset', authenticateToken, (req, res) => {
     }
 });
 
-// API serve trang tra cứu sản phẩm (thay thế cho frontend)
-app.get('/product/:productId', async (req, res) => {
+// ----- SỬA: TRA CỨU THEO batchNumber THAY CHO PRODUCTID ------
+// Hiển thị lịch sử chuỗi cung ứng theo batchNumber
+app.get('/product/:batchNumber', async (req, res) => {
     try {
-        const { productId } = req.params;
-        
-        if (!productId) {
+        const { batchNumber } = req.params;
+
+        if (!batchNumber) {
             return res.status(400).send(`
                 <!DOCTYPE html>
                 <html lang="vi">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Lỗi - Supply Chain Blockchain</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                        .error { background: #ffebee; color: #c62828; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 500px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="error">
-                        <h1>❌ Lỗi</h1>
-                        <p>Mã sản phẩm không hợp lệ</p>
-                    </div>
-                </body>
-                </html>
+                <head><meta charset="UTF-8"><title>Lỗi</title></head>
+                <body><h1>❌ Thiếu batchNumber</h1></body></html>
             `);
         }
 
-        // Lấy lịch sử sản phẩm
-        const history = supplyChain.getProduct(productId);
+        // Lấy lịch sử chuỗi cung ứng của batch đó
+        const history = supplyChain.getProduct(batchNumber);
         if (!history || history.length === 0) {
             return res.status(404).send(`
                 <!DOCTYPE html>
                 <html lang="vi">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Sản phẩm không tồn tại - Supply Chain Blockchain</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                        .not-found { background: #fff3e0; color: #ef6c00; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 500px; }
-                        .qr-code { margin: 20px 0; }
-                        .qr-code img { max-width: 200px; height: auto; }
-                    </style>
-                </head>
-                <body>
-                    <div class="not-found">
-                        <h1>🔍 Sản phẩm không tồn tại</h1>
-                        <p>Mã sản phẩm: <strong>${productId}</strong></p>
-                        <p>Không tìm thấy thông tin trong blockchain</p>
-                    </div>
-                </body>
-                </html>
+                <head><meta charset="UTF-8"><title>BATCH không tồn tại</title></head>
+                <body><h1>🔍 Không tìm thấy batch: ${batchNumber}</h1><p>Không có thông tin chuỗi cung ứng.</p></body></html>
             `);
         }
-
-        // Tạo trang tra cứu sản phẩm
-        const productInfo = history[0]; // Lấy thông tin đầu tiên
-        const lastUpdate = history[history.length - 1]; // Lấy thông tin mới nhất
-        
+        const productInfo = history[0]; // Block đầu tiên
+        const lastUpdate = history[history.length - 1]; // Block mới nhất
+        // (copy phần render UI như cũ)
+        // ... Keep the existing HTML rendering code, just swap productId -> batchNumber appropriately ...
         const html = `
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tra cứu sản phẩm ${productId} - Supply Chain Blockchain</title>
+    <title>Tra cứu batch ${batchNumber} - Supply Chain Blockchain</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -984,62 +1146,70 @@ app.get('/product/:productId', async (req, res) => {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 Tra cứu sản phẩm</h1>
-            <div class="product-id">${productId}</div>
+            <h1>🔍 Tra cứu batchNumber</h1>
+            <div class="product-id">${batchNumber}</div>
         </div>
-        
         <div class="content">
             <div class="info-card">
-                <h3>📊 Thông tin sản phẩm</h3>
-                <div class="info-row">
-                    <span class="info-label">Mã sản phẩm:</span>
-                    <span class="info-value">${productId}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Trạng thái hiện tại:</span>
-                    <span class="info-value">${lastUpdate.status || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Vị trí hiện tại:</span>
-                    <span class="info-value">${lastUpdate.location || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Người cập nhật cuối:</span>
-                    <span class="info-value">${lastUpdate.actor || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Thời gian cập nhật:</span>
-                    <span class="info-value">${new Date(lastUpdate.timestamp).toLocaleString('vi-VN')}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Số block trong chuỗi:</span>
-                    <span class="info-value">${history.length}</span>
-                </div>
+                            <h3>📊 Thông tin batch</h3>
+                <div class="info-row"><span class="info-label">Batch Number:</span><span class="info-value">${batchNumber}</span></div>
+                <div class="info-row"><span class="info-label">Tên sản phẩm:</span><span class="info-value">${productInfo.productName || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Trạng thái hiện tại:</span><span class="info-value">${lastUpdate.status || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Vị trí hiện tại:</span><span class="info-value">${lastUpdate.location || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Người cập nhật cuối:</span><span class="info-value">${lastUpdate.actor || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Thời gian cập nhật:</span><span class="info-value">${new Date(lastUpdate.timestamp).toLocaleString('vi-VN')}</span></div>
+                <div class="info-row"><span class="info-label">Số block trong chuỗi:</span><span class="info-value">${history.length}</span></div>
             </div>
-
             <div class="timeline">
                 <h3>📈 Lịch sử chuỗi cung ứng</h3>
-                ${history.map((item, index) => `
+                ${history.map((item, index) => {
+                    // Map trạng thái sang tiếng Việt
+                    const statusVNMap = {
+                        'pickup': 'Đã lấy hàng',
+                        'intransit': 'Đang vận chuyển',
+                        'delivered': 'Đã giao hàng'
+                    };
+                    
+                    let displayStatus = item.status || 'N/A';
+                    
+                    // Nếu là shipper, check trong status text có chứa các từ khóa
+                    if (item.role === 'shipper' && item.status) {
+                        // Tìm status code từ item
+                        for (const [code, vnText] of Object.entries(statusVNMap)) {
+                            if (item.status.includes(code) || (item.details && item.details.status === code)) {
+                                // Extract from/to location từ status string
+                                const parts = item.status.split('-');
+                                if (parts.length > 1) {
+                                    displayStatus = vnText + ' -' + parts.slice(1).join('-');
+                                } else {
+                                    displayStatus = vnText;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    
+                    return `
                     <div class="timeline-item">
-                        <div class="timeline-actor">${item.actor || 'Unknown'}</div>
+                        <div class="timeline-actor">${item.actor || 'Unknown'} - ${item.role || 'N/A'}</div>
                         <div class="timeline-time">${new Date(item.timestamp).toLocaleString('vi-VN')}</div>
-                        <div class="timeline-status">${item.status || 'N/A'}</div>
+                        <div class="timeline-status">${displayStatus}</div>
+                        ${item.batchNumber ? `<div style="color: #0277bd; font-size: 0.9em; margin-top: 3px;">🏷️ Batch: ${item.batchNumber}</div>` : ''}
                         ${item.location ? `<div style="color: #666; font-size: 0.9em; margin-top: 5px;">📍 ${item.location}</div>` : ''}
                     </div>
-                `).join('')}
+                    `;
+                }).join('')}
             </div>
-
-            ${productInfo.qrCode ? `
+            ${(productInfo.qrCode ? `
             <div class="qr-section">
                 <h3>📱 QR Code sản phẩm</h3>
                 <div class="qr-code">
-                    <img src="${productInfo.qrCode}" alt="QR Code cho sản phẩm ${productId}">
+                    <img src="${productInfo.qrCode}" alt="QR Code cho batch ${batchNumber}">
                 </div>
-                <p>Quét QR code này để chia sẻ thông tin sản phẩm</p>
+                <p>Quét QR code này để chia sẻ thông tin batch</p>
             </div>
-            ` : ''}
+            ` : '')}
         </div>
-        
         <div class="footer">
             <p>Supply Chain Blockchain System</p>
             <p>Thời gian tra cứu: ${new Date().toLocaleString('vi-VN')}</p>
@@ -1048,83 +1218,44 @@ app.get('/product/:productId', async (req, res) => {
 </body>
 </html>
         `;
-
         res.send(html);
     } catch (error) {
         console.error('Lỗi serve trang tra cứu:', error);
-        res.status(500).send(`
-            <!DOCTYPE html>
-            <html lang="vi">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Lỗi Server - Supply Chain Blockchain</title>
-                <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                    .error { background: #ffebee; color: #c62828; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 500px; }
-                </style>
-            </head>
-            <body>
-                <div class="error">
-                    <h1>❌ Lỗi Server</h1>
-                    <p>Không thể tải thông tin sản phẩm</p>
-                </div>
-            </body>
-            </html>
-        `);
+        res.status(500).send('<h1>❌ Không thể tải thông tin batch</h1>');
     }
 });
 
-// API tạo QR code cho sản phẩm
-app.get('/api/qrcode/:productId', async (req, res) => {
+// Tạo QR code cho batch (không tạo cho productId nữa!)
+app.get('/api/qrcode/:batchNumber', async (req, res) => {
     try {
-        const { productId } = req.params;
-        
-        if (!productId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Thiếu mã sản phẩm'
-            });
+        const { batchNumber } = req.params;
+        if (!batchNumber) {
+            return res.status(400).json({ success: false, message: 'Thiếu batch number' });
         }
-
-        // Kiểm tra sản phẩm có tồn tại không
-        const history = supplyChain.getProduct(productId);
+        const history = supplyChain.getProduct(batchNumber);
         if (!history || history.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: `Sản phẩm "${productId}" không tồn tại trong blockchain`
-            });
+            return res.status(404).json({ success: false, message: `Batch '${batchNumber}' không tồn tại trong blockchain` });
         }
-
-        // URL để tra cứu (sử dụng IP WiFi tự động phát hiện và port backend)
+        // URL cho batch
         const serverIP = process.env.SERVER_IP || wifiIP;
         const backendPort = process.env.BACKEND_PORT || '5000';
-        const queryURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(productId)}`;
-        
+        const queryURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNumber)}`;
         // Tạo QR code
         const qrCodeDataURL = await QRCode.toDataURL(queryURL, {
             width: 400,
             margin: 2,
-            color: {
-                dark: '#1a237e',
-                light: '#FFFFFF'
-            }
+            color: { dark: '#1a237e', light: '#FFFFFF' }
         });
-
         res.json({
             success: true,
-            productId: productId,
+            batchNumber: batchNumber,
             qrCode: qrCodeDataURL,
             url: queryURL,
             blockCount: history.length
         });
     } catch (error) {
         console.error('Lỗi tạo QR code:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Lỗi tạo QR code',
-            error: error.message
-        });
+        res.status(500).json({ success: false, message: 'Lỗi tạo QR code', error: error.message });
     }
 });
 
@@ -1306,6 +1437,28 @@ app.get('/api/smart-contract/stats', (req, res) => {
             error: error.message
         });
     }
+});
+
+// API tra cứu truy vết: uniqueId (ưu tiên), batchNumber, gtin, productId
+app.get('/api/product-history', async (req, res) => {
+    const { uniqueId, batchNumber, gtin, productName } = req.query; // Changed from productId to productName
+    let history = [];
+    // Ưu tiên truy theo uniqueId → batchNumber → gtin → productName
+    if (uniqueId) {
+        history = supplyChain.chain.slice(1).filter(b => b.data && b.data.uniqueId === uniqueId);
+    } else if (batchNumber) {
+        history = supplyChain.chain.slice(1).filter(b => b.data && b.data.batchNumber === batchNumber);
+    } else if (gtin) {
+        history = supplyChain.chain.slice(1).filter(b => b.data && b.data.gtin === gtin);
+    } else if (productName) {
+        history = supplyChain.chain.slice(1).filter(b => b.data && b.data.productName === productName);
+    }
+    res.json(Array.isArray(history) && history.length > 0 ? history.map(b => ({
+        blockIndex: b.index,
+        hash: b.hash,
+        timestamp: b.timestamp,
+        ...b.data
+    })) : []);
 });
 
 // Handle 404 - Đặt sau tất cả các route

@@ -373,3 +373,385 @@ document.addEventListener('DOMContentLoaded', () => {
         window.smartContractHandler.displaySmartContractInfo();
     }
 });
+
+// ====== UI Truy xuất nguồn gốc theo UniqueID, Batch, GTIN ======
+function initializeTraceInputUI(containerId = 'traceSection') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = `
+      <label for="traceInput" style="font-weight:bold;">Nhập hoặc quét mã sản phẩm (Unique ID, Batch, GTIN):</label><br>
+      <input id="traceInput" class="trace-input" placeholder="Ví dụ: 083ce23e-..., BATCH-CÀPHÊ..., 81321A30..." style="width: 340px; padding:6px; font-size:1em;">
+      <button id="traceSearchBtn" style="margin-left:6px;">Truy xuất</button>
+      <button id="traceQRBtn" style="margin-left:2px;">Quét QR</button>
+      <div id="traceResult" style="margin-top:14px;"></div>
+    `;
+    const input = document.getElementById('traceInput');
+    const resultDiv = document.getElementById('traceResult');
+    
+    // Hàm tra cứu lịch sử bằng mã nhập
+    async function handleTrace() {
+      const value = input.value.trim();
+      if (!value) {
+        resultDiv.innerHTML = '<span style="color:red">Vui lòng nhập mã sản phẩm!</span>';
+        return;
+      }
+      resultDiv.innerHTML = '⏳ Đang truy xuất...';
+      let url = window.API_URL + '/api/product-history?';
+      if (/^[0-9a-fA-F\-]{30,}$/.test(value)) {
+        url += 'uniqueId=' + encodeURIComponent(value);
+      } else if (/^BATCH/i.test(value)) {
+        url += 'batchNumber=' + encodeURIComponent(value);
+      } else if (/^[0-9]{10,}$/.test(value)) {
+        url += 'gtin=' + encodeURIComponent(value);
+      } else {
+        resultDiv.innerHTML = '<span style="color:orange">Chú ý: Tên sản phẩm có thể trả về nhiều lô/trùng lặp. Vui lòng nhập chính xác mã uniqueId hoặc batch hoặc GTIN nếu cần tra cứu nguồn gốc duy nhất!</span>';
+        url += 'productName=' + encodeURIComponent(value);
+      }
+      fetch(url, {headers:{'Authorization':`Bearer ${localStorage.getItem('token')||''}`}})
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.success !== false && data.length) {
+            // BẮT ĐẦU: Render đẹp từng block/event
+            let html = `<div style='font-weight:bold;font-size:1.1em;margin-bottom:8px;color:#fb8c00'>⛓️ Lịch sử sản phẩm/lô (${data.length} sự kiện)</div><div class='timeline-trace'>`;
+            data.forEach((item, idx) => {
+              const roleDict = {farmer:'🌾', shipper:'🚚', factory:'🏭', retailer:'🏪'};
+              const actorRole = roleDict[item.role] || '👤';
+              const t = item.timestamp || item.recordedAt || item['timestampBlock'] || item.details?.recordedAt;
+              const tm = t ? (new Date(t).toLocaleString('vi-VN')) : '?';
+              html += `<div class='timeline-block'>
+                <div class='timeline-row1'>
+                  <span class='block-index'>#${item.blockIndex ?? idx+1}</span>
+                  <span class='trace-role'>${actorRole} ${item.role||''}</span>
+                  <span class='trace-actor'>👤 <b>${item.actor||'-'}</b></span>
+                  <span class='trace-time'>🕒 ${tm}</span>
+                </div>
+                <div class='trace-status'><b>${item.status||item.action||'-'}</b></div>
+                <div class='trace-meta'>
+                  ${item.productName?`<span>📦 <b>${item.productName}</b></span>`:''}
+                  ${item.batchNumber?`<span style='color:#0277bd'>• Batch <b>${item.batchNumber}</b></span>`:''}
+                  ${item.quantity?`<span>• Số lượng <b>${item.quantity}</b></span>`:''}
+                  ${item.quality?`<span>• Chất lượng <b>${item.quality}</b></span>`:''}
+                  ${item.location?`<span>• Địa điểm <b>${item.location}</b></span>`:''}
+                  ${item.gtin?`<span style='color:#00796b'>• GTIN ${item.gtin}</span>`:''}
+                </div>
+                ${item.qrCode?`<div class='trace-qr-img'><img src='${item.qrCode}' title='QR sản phẩm/lô này' style='width:70px;border:2px solid #fbc02d;border-radius:8px;padding:4px;background:#fff'></div>`:''}
+                <div class='trace-hash'>🔗 Hash: <span>${(item.hash||'').substring(0,14)}...</span></div>
+              </div>`;
+            });
+            html += '</div>';
+            resultDiv.innerHTML = html;
+          } else if (data && Array.isArray(data) && data.length === 0) {
+            resultDiv.innerHTML = '<span style="color:orange">Không tìm thấy sản phẩm nào với mã này!</span>';
+          } else {
+            resultDiv.innerHTML = `<span style='color:red;'>${data.message||'Không tìm thấy sản phẩm phù hợp.'}</span>`;
+          }
+        })
+        .catch(err => {
+          resultDiv.innerHTML = `<span style='color:red;'>Lỗi khi kết nối server: ${err.message}</span>`;
+        });
+    }
+    document.getElementById('traceSearchBtn').onclick = handleTrace;
+    input.addEventListener('keydown', e => (e.key==='Enter') && handleTrace());
+    
+    // Nút quét QR (placeholder, cần tích hợp thư viện jsQR hoặc html5-qrcode nếu muốn)
+    document.getElementById('traceQRBtn').onclick = function() {
+      alert('Chức năng quét QR cần được tích hợp thêm (jsQR, html5-qrcode hoặc gọi camera điện thoại)!');
+    };
+    
+    // Có thể tự động fill demo mã nếu muốn hướng dẫn demo cho người mới
+}
+
+// Gợi ý: thêm dòng này ở layout hoặc khi load trang tra cứu, dashboard:
+// initializeTraceInputUI();
+
+// CSS TIMELINE UI TRA CỨU ĐẸP
+if (!document.getElementById('timeline_trace_css')) {
+  const style = document.createElement('style');
+  style.id = 'timeline_trace_css';
+  style.textContent = `
+  .timeline-trace { border-left:5px solid #ffe082; margin-top:17px; margin-left:10px; }
+  .timeline-block { position:relative; margin-bottom:32px; margin-left:-7px; padding-left:22px; background:#fffde7; border-radius:10px; border:1px solid #ffe082; box-shadow:0 1px 5px #fffbe5;}
+  .timeline-row1 { display:flex; gap:14px; align-items:center; padding-top:10px; font-size:1em; color:#ef6c00; }
+  .block-index { color:#fff; background:#fb8c00; border-radius: 7px; min-width:36px; text-align:center; font-weight:bold; padding: 3px 10px; margin-right:7px; }
+  .trace-role { font-weight:600; }
+  .trace-actor { color:#1a237e; }
+  .trace-time { color:#333; font-size:0.97em; margin-left:auto; }
+  .trace-status { font-size:1.12em; color:#d84315; padding:6px 0; margin-top:4px; margin-bottom:3px; font-weight:600; }
+  .trace-meta { font-size:0.99em; color:#4e2801; padding:0 0 8px 0; display:flex; flex-wrap:wrap; gap:14px; }
+  .trace-qr-img { margin-bottom:7px; }
+  .trace-hash { font-size:0.89em; color:#bdbdbd; padding-bottom:8px; }
+  `;
+  document.head.appendChild(style);
+}
+
+// JS xử lý nhập liệu, dashboard và lịch sử sản phẩm dùng chuẩn tiếng Việt và batchNumber là ID duy nhất.
+
+let currentUser = null;
+
+function checkAuth() {
+    const token = localStorage.getItem('token');
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+    if (!token || !user.username) {
+        location.href = 'login.html';
+        return;
+    }
+    currentUser = user;
+    document.getElementById('userName').textContent = `👤 ${user.username}`;
+    document.getElementById('userRole').textContent = getRoleIcon(user.role) + ' ' + getRoleName(user.role);
+    createFormForRole(user.role);
+    loadUserHistory();
+}
+
+function getRoleIcon(role) {
+    const icons = {
+        'farmer': '🌾', 'shipper': '🚚', 'factory': '🏭', 'retailer': '🏪'
+    };
+    return icons[role] || '👤';
+}
+function getRoleName(role) {
+    const roles = {
+        'farmer': 'Nông dân','shipper': 'Vận chuyển','factory': 'Nhà máy','retailer': 'Bán lẻ'
+    };
+    return roles[role] || role;
+}
+
+function createFormForRole(role) {
+    const section = document.getElementById('inputSection');
+    let formContent = '';
+    if(role === 'farmer') {
+        formContent = `
+          <h2>🌾 Thêm sản phẩm mới</h2>
+          <div class="form-group">
+              <label for="productName">Tên sản phẩm *</label>
+              <input type="text" id="productName" required placeholder="VD: Gạo, Cà phê, Đậu nành">
+          </div>
+          <div class="form-group">
+              <label for="location">Địa điểm *</label>
+              <input type="text" id="location" required placeholder="Nhập địa điểm hiện tại">
+          </div>
+          <div class="form-group">
+              <label for="harvestDate">Ngày thu hoạch *</label>
+              <input type="date" id="harvestDate" required>
+          </div>
+          <div class="form-group">
+              <label for="quantity">Số lượng (kg) *</label>
+              <input type="number" id="quantity" required min="0" step="0.1">
+          </div>
+          <div class="form-group">
+              <label for="quality">Chất lượng</label>
+              <select id="quality" required>
+                  <option value="A">Loại A - Cao cấp</option>
+                  <option value="B">Loại B - Tiêu chuẩn</option>
+                  <option value="C">Loại C - Thường</option>
+              </select>
+          </div>
+          <div class="form-group">
+              <label for="notes">Ghi chú</label>
+              <textarea id="notes" placeholder="Thông tin thêm về lô hàng..."></textarea>
+          </div>
+          <button type="submit" class="submit-btn" onclick="submitForm()">💾 Lưu thông tin</button>
+        `;
+    } else {
+        // Các role khác dùng batchNumber làm ID chính
+        formContent = `
+        <h2>${getRoleIcon(role)} Cập nhật thông tin lô hàng</h2>
+        <div class="form-group">
+            <label for="batchNumber">Mã lô sản phẩm *</label>
+            <input type="text" id="batchNumber" required placeholder="Nhập mã lô sản phẩm (batchNumber)">
+        </div>
+        <div class="form-group">
+            <label for="location">Địa điểm *</label>
+            <input type="text" id="location" required placeholder="Nhập địa điểm hiện tại">
+        </div>
+        <!-- Thêm các field tuỳ biến theo role ở đây, ví dụ shipper/factory -->
+        `;
+        if (role === 'factory') {
+            formContent += `
+            <div class="form-group">
+                <label for="processType">Loại quy trình *</label>
+                <select id="processType" required>
+                    <option value="cleaning">Làm sạch</option>
+                    <option value="roasting">Rang</option>
+                    <option value="grinding">Xay</option>
+                    <option value="packaging">Đóng gói</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="temperature">Nhiệt độ xử lý (°C)</label>
+                <input type="number" id="temperature" step="0.1">
+            </div>
+            <div class="form-group">
+                <label for="duration">Thời gian xử lý (phút)</label>
+                <input type="number" id="duration" min="0">
+            </div>`;
+        }
+        if (role === 'retailer') {
+            formContent += `
+            <div class="form-group">
+                <label for="saleDate">Ngày bán *</label>
+                <input type="date" id="saleDate" required>
+            </div>
+            <div class="form-group">
+                <label for="quantity">Số lượng bán (kg) *</label>
+                <input type="number" id="quantity" required min="0" step="0.1">
+            </div>
+            <div class="form-group">
+                <label for="price">Giá bán (VNĐ/kg) *</label>
+                <input type="number" id="price" required min="0">
+            </div>
+            <div class="form-group">
+                <label for="customerType">Loại khách hàng</label>
+                <select id="customerType">
+                    <option value="individual">Cá nhân</option>
+                    <option value="business">Doanh nghiệp</option>
+                </select>
+            </div>`;
+        }
+        formContent += `<button type="submit" class="submit-btn" onclick="submitForm()">💾 Cập nhật trạng thái</button>`;
+    }
+    section.innerHTML = formContent;
+}
+
+async function submitForm() {
+    const formData = {};
+    const inputs = document.querySelectorAll('#inputSection input, #inputSection select, #inputSection textarea');
+    inputs.forEach(input => {
+        if (input.value) {
+            formData[input.id] = input.value;
+        }
+    });
+    formData.actor = currentUser.username;
+    formData.role = currentUser.role;
+
+    // Chuẩn hoá dữ liệu gửi lên
+    if(currentUser.role === 'farmer') {
+        // Chỉ gửi productName, không gửi batchNumber
+        if(formData.batchNumber) delete formData.batchNumber;
+    } else {
+        // Các vai trò khác: chỉ gửi batchNumber, không gửi productName
+        if(formData.productName) delete formData.productName;
+    }
+
+    try {
+        const response = await fetch(`${window.API_URL}/api/record`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify(formData)
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            alert(`❌ Thất bại: ${data.message || 'Không thể lưu dữ liệu'}`);
+            return;
+        }
+        alert('✅ Thành công! Dữ liệu đã được ghi nhận trên blockchain!');
+        // Gửi xong reset form và reload lịch sử
+        loadUserHistory();
+        inputs.forEach(input => {
+            if (input.type !== 'select-one') input.value = '';
+        });
+    } catch (error) {
+        alert(`❌ Lỗi: ${error.message}`);
+    }
+}
+
+async function loadUserHistory() {
+    const historyContent = document.getElementById('historyContent');
+    historyContent.innerHTML = '<div class="loading">⏳ Đang tải lịch sử...</div>';
+    try {
+        // Wait for API_URL to be available
+        if (!window.API_URL) {
+            await new Promise(resolve => {
+                const checkInterval = setInterval(() => {
+                    if (window.API_URL) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+        const response = await fetch(`${window.API_URL}/api/user-history/${currentUser.username}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Có lỗi xảy ra');
+
+        if (!data || data.length === 0) {
+            historyContent.innerHTML = `<div class="empty-message">ℹ️ Chưa có lịch sử cập nhật nào.</div>`;
+            return;
+        }
+        let html = '';
+        data.forEach(item => {
+            const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
+            let qrSection = '';
+            if(item.qrCode) {
+                qrSection = `<div class="timeline-qr"><img src="${item.qrCode}" alt="QR Code" onclick="enlargeQR('${item.qrCode}', '${item.batchNumber || ''}', '${item.productName || ''}')" title="Click để phóng to QR code"><p>📱 Quét QR</p></div>`;
+            }
+            html += `
+            <div class="timeline-item">
+                <div class="timeline-content">
+                    <div class="timeline-status">${item.status || ''}</div>
+                    <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
+                    <div class="timeline-info"><strong>📦 Tên sản phẩm:</strong> ${item.productName || '-'}</div>
+                    <div class="timeline-info"><strong>🏷️ Batch Number:</strong> ${item.batchNumber || '-'}</div>
+                    <div class="timeline-info"><strong>📍 Địa điểm:</strong> ${item.location || '-'}</div>
+                </div>
+                ${qrSection}
+            </div>`;
+        });
+        historyContent.innerHTML = html;
+    } catch (error) {
+        historyContent.innerHTML = `<div class="empty-message" style="color: #d32f2f;">❌ Lỗi tải lịch sử: ${error.message}</div>`;
+    }
+}
+
+function logout() {
+    if (confirm('Bạn có chắc muốn đăng xuất?')) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        location.href = 'index.html';
+    }
+}
+
+function enlargeQR(qrCodeData, batchNumber, productName) {
+    const modal = document.getElementById('qrModal');
+    const qrImage = document.getElementById('qrCodeImage');
+    const batchNumberEl = document.getElementById('qrBatchNumber');
+    const productNameEl = document.getElementById('qrProductName');
+    qrImage.src = qrCodeData;
+    batchNumberEl.textContent = batchNumber || '';
+    productNameEl.textContent = productName || '';
+    modal.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+function closeQRModal() {
+    const modal = document.getElementById('qrModal');
+    modal.classList.remove('show');
+    document.body.style.overflow = 'auto';
+}
+function downloadQRCode() {
+    const qrImage = document.getElementById('qrCodeImage');
+    const batchNumber = document.getElementById('qrBatchNumber').textContent;
+    const link = document.createElement('a');
+    link.href = qrImage.src;
+    link.download = `QR_${batchNumber.replace(/\s+/g, '_')}.png`;
+    link.click();
+}
+
+// Xử lý nút chuyển tab
+function showSection(sectionName) {
+    document.getElementById('inputSection').style.display = sectionName === 'input' ? 'block' : 'none';
+    document.getElementById('historySection').style.display = sectionName === 'history' ? 'block' : 'none';
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.textContent.includes(sectionName === 'input' ? 'Nhập liệu' : 'Lịch sử')) {
+            btn.classList.add('active');
+        }
+    });
+}
+window.onload = checkAuth;

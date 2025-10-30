@@ -18,10 +18,10 @@ class SupplyChainContract {
         // Định nghĩa các validation rules cho từng action
         this.validationRules = {
             create_product: {
-                requiredFields: ['productId', 'quantity', 'location', 'harvestDate'],
+                requiredFields: ['productName', 'quantity', 'location', 'harvestDate'],
                 validate: (data) => {
-                    if (!data.productId || data.productId.trim() === '') {
-                        throw new Error('Mã sản phẩm không được để trống');
+                    if (!data.productName || data.productName.trim() === '') {
+                        throw new Error('Tên sản phẩm không được để trống');
                     }
                     if (!data.quantity || isNaN(data.quantity) || data.quantity <= 0) {
                         throw new Error('Số lượng phải là số dương');
@@ -36,10 +36,10 @@ class SupplyChainContract {
                 }
             },
             harvest: {
-                requiredFields: ['productId', 'quantity', 'quality', 'location'],
+                requiredFields: ['productName', 'quantity', 'quality', 'location'],
                 validate: (data) => {
-                    if (!data.productId || data.productId.trim() === '') {
-                        throw new Error('Mã sản phẩm không được để trống');
+                    if (!data.productName || data.productName.trim() === '') {
+                        throw new Error('Tên sản phẩm không được để trống');
                     }
                     if (!data.quantity || isNaN(data.quantity) || data.quantity <= 0) {
                         throw new Error('Số lượng thu hoạch phải là số dương');
@@ -54,10 +54,10 @@ class SupplyChainContract {
                 }
             },
             transport: {
-                requiredFields: ['productId', 'fromLocation', 'toLocation', 'status'],
+                requiredFields: ['batchNumber', 'fromLocation', 'toLocation', 'status'],
                 validate: (data) => {
-                    if (!data.productId || data.productId.trim() === '') {
-                        throw new Error('Mã sản phẩm không được để trống');
+                    if (!data.batchNumber || data.batchNumber.trim() === '') {
+                        throw new Error('Số lô hàng (batchNumber) không được để trống');
                     }
                     if (!data.fromLocation || data.fromLocation.trim() === '') {
                         throw new Error('Địa điểm xuất phát không được để trống');
@@ -65,32 +65,29 @@ class SupplyChainContract {
                     if (!data.toLocation || data.toLocation.trim() === '') {
                         throw new Error('Địa điểm đến không được để trống');
                     }
-                    if (!data.status || !['pending', 'intransit', 'delivered'].includes(data.status)) {
-                        throw new Error('Trạng thái vận chuyển không hợp lệ');
+                    if (!data.status || !['pickup', 'intransit', 'delivered'].includes(data.status)) {
+                        throw new Error('Trạng thái vận chuyển không hợp lệ (pickup, intransit, delivered)');
                     }
                     return true;
                 }
             },
             process: {
-                requiredFields: ['productId', 'processType', 'batchNumber'],
+                requiredFields: ['batchNumber', 'processType'],
                 validate: (data) => {
-                    if (!data.productId || data.productId.trim() === '') {
-                        throw new Error('Mã sản phẩm không được để trống');
+                    if (!data.batchNumber || data.batchNumber.trim() === '') {
+                        throw new Error('Số lô (batchNumber) không được để trống');
                     }
                     if (!data.processType || data.processType.trim() === '') {
                         throw new Error('Loại chế biến không được để trống');
-                    }
-                    if (!data.batchNumber || data.batchNumber.trim() === '') {
-                        throw new Error('Số lô không được để trống');
                     }
                     return true;
                 }
             },
             sell: {
-                requiredFields: ['productId', 'price', 'quantity'],
+                requiredFields: ['batchNumber', 'price', 'quantity'],
                 validate: (data) => {
-                    if (!data.productId || data.productId.trim() === '') {
-                        throw new Error('Mã sản phẩm không được để trống');
+                    if (!data.batchNumber || data.batchNumber.trim() === '') {
+                        throw new Error('Số lô (batchNumber) không được để trống');
                     }
                     if (!data.price || isNaN(data.price) || data.price <= 0) {
                         throw new Error('Giá bán phải là số dương');
@@ -100,9 +97,8 @@ class SupplyChainContract {
                     }
                     return true;
                 }
-            }
+            },
         };
-
         // Lưu trữ lịch sử validation
         this.validationHistory = [];
     }

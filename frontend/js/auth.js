@@ -61,18 +61,24 @@ if (document.getElementById('loginForm')) {
             const messageDiv = document.getElementById('message');
 
             if (response.ok) {
+                // Lưu JWT token
                 localStorage.setItem('token', data.token);
-                localStorage.setItem('user', JSON.stringify({
-                    username: data.username,
-                    role: data.role
-                }));
+                
+                // Lưu user info (bao gồm publicKey)
+                localStorage.setItem('user', JSON.stringify(data.user));
+                
+                // ========== LƯU PRIVATE KEY ==========
+                if (data.privateKey) {
+                    localStorage.setItem('privateKey', data.privateKey);
+                    console.log('🔐 Đã lưu private key vào localStorage');
+                }
                 
                 messageDiv.className = 'message success';
                 messageDiv.textContent = '✅ Đăng nhập thành công - Đang chuyển hướng...';
                 setTimeout(() => window.location.href = 'dashboard.html', 1500);
             } else {
                 messageDiv.className = 'message error';
-                messageDiv.textContent = '❌ ' + data.error;
+                messageDiv.textContent = '❌ ' + (data.message || data.error);
             }
         } catch (error) {
             document.getElementById('message').className = 'message error';
