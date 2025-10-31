@@ -508,7 +508,7 @@
                 // Sử dụng jsrsasign để ký
                 const sig = new KJUR.crypto.Signature({alg: "SHA256withRSA"});
                 sig.init(privateKeyPEM);
-                sig.updateString(JSON.stringify(data));
+                sig.updateString(JSON.stringify(data, Object.keys(data).sort()));
                 const signature = sig.sign();
                 
                 console.log('✅ Đã ký giao dịch thành công');

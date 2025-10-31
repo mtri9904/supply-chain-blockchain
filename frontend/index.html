@@ -3,361 +3,309 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Truy xuất nguồn gốc Chuỗi cung ứng Blockchain</title>
-    <link href="https://fonts.googleapis.com/css?family=Montserrat:700,500,400&display=swap" rel="stylesheet">
+    <title>Truy xuất nguồn gốc - Supply Chain</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
         :root {
-            --main-blue: #2860e1;
-            --hover-blue: #154aba;
-            --light-blue: #eaf1ff;
-            --navbar-bg: #fff;
-            --hero-bg: #f6f9fe;
-            --main-gray: #6c778a;
+            --primary: #1a237e; --primary-hover: #283593; --success: #4caf50; --danger: #f44336;
+            --light: #f8f9fa; --gray: #6c757d; --border: #dee2e6; --shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --radius: 12px; --transition: all 0.2s ease;
         }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Montserrat', 'Segoe UI', Arial, Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--hero-bg);
-            margin: 0;
-            min-height: 100vh;
-            color: #253354;
+            font-family: 'Inter', sans-serif; background: #f6f9fe; color: #253354;
+            min-height: 100vh; line-height: 1.6; margin: 0;
+            display: flex; flex-direction: column;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            width: 100%;
-            box-sizing: border-box;
-            padding: 0 24px;
-        }
+        .main-content { flex: 1; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
         .navbar {
-            width:100%;
-            background: var(--navbar-bg);
-            box-shadow: 0 2px 12px #acc1e014;
-            position:sticky;
-            top:0;
-            left:0;
-            z-index:100;
-            min-height:65px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            background: white; box-shadow: 0 2px 12px rgba(0,0,0,0.05); padding: 16px 0;
+            position: sticky; top: 0; z-index: 100;
         }
-        .navbar-content {
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            min-height:65px;
+        .navbar .container { display: flex; justify-content: space-between; align-items: center; }
+        .brand { display: flex; align-items: center; gap: 12px; font-weight: 700; color: var(--primary); font-size: 1.3rem; }
+        .brand img { width: 46px; height: 46px; border-radius: 12px; }
+        .auth-buttons { display: flex; gap: 12px; }
+        .btn {
+            padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer;
+            transition: var(--transition); font-size: 0.95rem; border: none;
         }
-        .brand-wrap {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            user-select:none;
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { background: white; color: var(--primary); border: 1.5px solid var(--primary); }
+        .btn:hover { transform: translateY(-1px); }
+
+        .hero { text-align: center; padding: 60px 20px; }
+        .hero h1 { font-size: 2.2rem; color: var(--primary); margin-bottom: 16px; font-weight: 700; }
+        .hero p { color: var(--gray); max-width: 600px; margin: 0 auto 32px; }
+
+        .search-card {
+            max-width: 500px; margin: 0 auto; background: white; border-radius: var(--radius);
+            padding: 28px; box-shadow: var(--shadow);
         }
-        .logo-img {
-            width: 46px; height: 46px; border-radius: 12px;
-            background:#fff; object-fit:cover;
+        .search-card h2 { text-align: center; color: var(--primary); margin-bottom: 20px; font-size: 1.3rem; }
+        .search-form { display: flex; gap: 0; border-radius: var(--radius); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .search-form input {
+            flex: 1; padding: 16px; border: none; font-size: 1.1rem; background: #f7faff;
         }
-        .brand-title {
-            font-size: 1.29rem;
-            font-weight: 700;
-            letter-spacing: .1px;
-            color: var(--main-blue);
-            white-space: nowrap;
+        .search-form button {
+            background: var(--primary); color: white; padding: 0 32px; font-weight: 600;
+            border: none; cursor: pointer;
         }
-        .auth-buttons {
-            display: flex;
-            gap: 13px;
-            align-items: center;
-        }
-        .auth-btn {
-            font-family:inherit;
-            font-size: 15.6px;
-            font-weight:600;
-            padding: 7px 24px;
-            border-radius: 7px;
-            border: none;
-            outline: none;
-            cursor: pointer;
-            background: var(--main-blue);
-            color: #fff;
-            transition: background .18s;
-            box-shadow: 0 1.2px 8px #cdd0ee21;
-            letter-spacing:0.03em;
-            min-width: 90px;
-        }
-        .auth-btn:last-child {
-            background:#fff;
-            color:var(--main-blue);
-            border:1.5px solid var(--main-blue);
-        }
-        .auth-btn:hover, .auth-btn:focus {
-            background: var(--hover-blue) !important;
-            color:#fff !important;
-        }
-        .hero {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content:center;
-            padding: 50px 0 16px 0;
-        }
-        .hero-content {
-            width:100%;
-            max-width: 660px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction:column;
-            align-items: center;
-        }
-        .hero-headline {
-            font-size: 2.1rem;
-            font-weight: 700;
-            line-height: 1.1;
-            color: #214184;
-            text-align: center;
-            margin-bottom: 14px;
-        }
-        .hero-desc {
-            color: var(--main-gray);
-            font-size: 1.03em;
-            max-width: 530px;
-            text-align:center;
-            margin-bottom: 5px;
-        }
-        .form-section {
-            background: #fff;
-            max-width: 388px;
-            margin: 28px auto 0 auto;
-            border-radius: 12px;
-            box-shadow: 0 2px 14px #acc1e021;
-            padding: 29px 22px 19px 22px;
-            position:relative;
-        }
-        .form-section h2 {
-            font-size: 1.13rem;
-            color: #2250b1;
-            margin-bottom: 13px;
-            text-align: center;
-            font-weight: 600;
-        }
-        #searchForm {
-            display: flex;
-            gap: 9px;
-            margin-bottom: 6px;
-        }
-        #productId {
-            flex: 1;
-            padding: 11px 10px;
-            border: 1.4px solid #cfe0f9;
-            border-radius: 7px;
-            font-size: 1.03rem;
-            outline: none;
-            background: #f7fafb;
-            transition: border .16s;
-        }
-        #productId:focus {
-            border: 1.4px solid var(--main-blue);
-        }
-        #searchForm button {
-            background: linear-gradient(90deg,#377efb,#79c4f9 99%);
-            color: #15367c;
-            font-weight:600;
-            border-radius:7px;
-            padding: 10px 21px;
-            cursor: pointer;
-            border:none;
-            transition: background 0.18s, transform .12s;
-            box-shadow: 0 1.2px 8px #eef7fb6c;
-            min-width:80px;
-        }
-        #searchForm button:hover {
-            background: linear-gradient(90deg,#2a60f2,#dcedfe 88%);
-            color: #143169;
-            transform: translateY(-2.5px) scale(1.03);
-        }
-        .form-section .faux-helper {
-            font-size:.95em; text-align:center; color:#7a98b3;margin-top:4px;
-        }
-        .result-section {
-            max-width: 430px;
-            margin: 0 auto 26px auto;
-            padding: 0 8px;
-        }
-        .timeline {
-            margin-top: 17px;
-        }
+
+        .result-section { margin-top: 40px; }
+        .result-title { text-align: center; color: var(--primary); font-weight: 600; margin: 24px 0 16px; }
+
+        /* Timeline Item */
         .timeline-item {
-            background: #e9f1ff;
-            padding: 17px 15px 11px 15px;
-            border-radius: 10px;
-            margin-bottom: 14px;
-            box-shadow: 0 2.5px 9px #d3dfff21;
-            border-left: 5px solid #4692f3;
-            animation: fadeIn .5s cubic-bezier(.52,2.1,.88,-0.13);
+            background: #f8fdff; border-left: 4px solid var(--primary); padding: 18px;
+            border-radius: 10px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-        .timeline-status {
-            font-size: 1.12em;
-            color: #3065ab;
-            font-weight:bold;
-            margin-bottom: 4px;
+
+        /* Giai đoạn */
+        .stage-header {
+            margin: 24px 0 12px; padding: 12px 16px; background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+            color: white; border-radius: 8px; font-weight: 600; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;
         }
-        .timeline-info {
-            font-size: 0.98em;
-            color: #365d7c;
-            margin-bottom: 2px;
+
+        /* Mỗi dòng thông tin có icon */
+        .info-line {
+            display: flex; align-items: flex-start; gap: 10px; margin: 6px 0; font-size: 0.95rem;
         }
-        .empty-message {
-            text-align:center; color: #4783c7; margin: 1.7em 0;
+        .info-line i {
+            color: var(--primary); width: 18px; text-align: center; font-size: 0.9rem; margin-top: 2px;
         }
-        .result-title {
-            color:#2457a5; font-size:1.13em; font-weight:600; text-align:center;
-        }
-        @keyframes fadeIn {
-          from {opacity:.1;transform:translateY(28px)}
-          to {opacity:1;transform:translateY(0)}
-        }
+        .info-line strong { color: #1a237e; min-width: 120px; }
+
         .footer {
-            margin-top: auto;
-            text-align:center;
-            font-size: 0.99em;
-            color: #9fafbc;
-            background: #f4f6fc;
-            padding: 18px 0 12px 0;
-            letter-spacing: 0.01em;
+            text-align: center; padding: 32px 20px; color: var(--gray); font-size: 0.9rem;
+            background: rgba(255,255,255,0.8); border-top: 1px solid #eee;
         }
-        .footer .container { max-width: 1200px; padding: 0 24px; }
-        @media (max-width: 700px) {
-            .container { padding:0 7vw; }
-            .hero-content { max-width:100vw; }
-        }
-        @media (max-width: 500px) {
-            .form-section, .result-section { max-width:98vw; padding:10px 1vw 4px 1vw; }
-            .footer {font-size:0.96em;padding:12px 0 7px 0;}
-        }
-        @media (max-width:540px) {
-          .navbar-content {flex-direction:column;align-items:flex-start;gap:10px;}
-          .auth-buttons {align-self:flex-end;margin-top:2px;}
+
+        @media (max-width: 600px) {
+            .search-form { flex-direction: column; }
+            .search-form button { padding: 16px; }
+            .info-line { flex-direction: column; gap: 4px; }
+            .info-line strong { min-width: auto; }
         }
     </style>
 </head>
 <body>
     <div class="navbar">
-        <div class="container navbar-content">
-            <div class="brand-wrap">
-                <img src="https://cdn-icons-png.flaticon.com/512/3877/3877569.png" class="logo-img" alt="Supply Chain Logo">
-                <span class="brand-title">Truy xuất nguồn gốc Chuỗi cung ứng</span>
+        <div class="container">
+            <div class="brand">
+                <img src="https://cdn-icons-png.flaticon.com/512/3877/3877569.png" alt="Logo">
+                <span>Truy xuất nguồn gốc</span>
             </div>
             <div class="auth-buttons" id="authButtons">
-                <button class="auth-btn" onclick="location.href='login.html'">Đăng nhập</button>
-                <button class="auth-btn" onclick="location.href='register.html'">Đăng ký</button>
+                <button class="btn btn-outline" onclick="location.href='login.html'">Đăng nhập</button>
+                <button class="btn btn-outline" onclick="location.href='register.html'">Đăng ký</button>
             </div>
         </div>
     </div>
-    <div class="hero">
-        <div class="container hero-content">
-            <div class="hero-headline">Xác thực nguồn gốc – Minh bạch chuỗi cung ứng</div>
-            <div class="hero-desc">
-                Nền tảng xác thực và minh bạch hóa nguồn gốc sản phẩm nhờ công nghệ blockchain.<br>
-                Tra cứu nguồn gốc thực phẩm, nông sản, dược phẩm, thiết bị, logistics và hơn thế nữa.
+
+    <div class="main-content">
+        <div class="hero">
+            <h1>Xác thực nguồn gốc – Minh bạch chuỗi cung ứng</h1>
+            <p>Tra cứu hành trình sản phẩm từ nông trại đến tay người tiêu dùng bằng công nghệ Blockchain.</p>
+        </div>
+
+        <div class="container">
+            <div class="search-card">
+                <h2>Tra cứu lô hàng</h2>
+                <form id="searchForm" class="search-form">
+                    <input type="text" id="batchNumber" placeholder="Nhập Batch Number (VD: BATCH-123)" required>
+                    <button type="submit">Tra cứu</button>
+                </form>
+                <p style="text-align:center;font-size:0.9rem;color:#666;margin-top:12px;">
+                    Ví dụ: <strong>BATCH-8679983269111</strong>
+                </p>
+            </div>
+
+            <div class="result-section">
+                <div id="result" style="display:none;"></div>
             </div>
         </div>
     </div>
-    <div class="form-section" style="box-shadow: 0 4px 22px #baccf818;max-width:410px;background:#fcfdff">
-        <h2 style="display:flex;justify-content:center;align-items:center;gap:9px;font-size:1.22rem;color:#214184;margin-bottom:18px">
-            <span style="font-size:1.4em;">🔎</span> Tra cứu lô hàng (batchNumber)
-        </h2>
-        <form id="searchForm" style="display:flex;gap:0;align-items:center;">
-            <input 
-                type="text" id="batchNumber"
-                placeholder="Nhập đúng mã lô GS1 (BATCH-...)"
-                required autofocus
-                style="flex:1;padding:14px 15px;font-size:1.1em;border:2px solid #e1eafe;border-top-left-radius:12px;border-bottom-left-radius:12px;border-right:none;background:#f5faff;outline:none;height:52px;transition:.18s"
-            />
-            <button type="submit" style="height:52px;border-top-right-radius:12px;border-bottom-right-radius:12px;min-width:110px;background:linear-gradient(90deg,#2860e1,#55aaff);color:white;font-size:1.09em;font-weight:600;outline:none;border:none;box-shadow:0 1.5px 8px #a9c4ff41;transition:.16s;cursor:pointer;">Tra cứu</button>
-        </form>
-        <div style="font-size:.99em;color:#758bac;padding:8px 3px 2px 3px;text-align:center;">
-            Ví dụ: <b>BATCH-8679983269111</b> hoặc <b>BATCH-CÀPHÊ-20251030</b><br>Hệ thống hỗ trợ batchNumber chuẩn GS1 (bắt đầu bằng "BATCH-")
-        </div>
+
+    <div class="footer">
+        © 2025 Supply Chain Blockchain | Hỗ trợ: 1900-9999
     </div>
-    <div class="result-section">
-        <div id="result" style="display:none;"></div>
-    </div>
-    <div class="footer"><div class="container">
-        © 2025 Truy xuất chuỗi cung ứng blockchain | Hỗ trợ khách hàng: 1900-9999 | Liên hệ kỹ thuật: support@supplyblock.vn
-    </div></div>
+
     <script src="js/config.js"></script>
     <script>
-        // Kiểm tra đăng nhập
         const token = localStorage.getItem('token');
         const user = JSON.parse(localStorage.getItem('user') || '{}');
-        
         if (token && user.username) {
-            // Đã đăng nhập - hiển thị nút dashboard và đăng xuất
-            const authButtons = document.getElementById('authButtons');
-            authButtons.innerHTML = `
-                <span style="color: #2860e1; font-weight: 600; margin-right: 10px;">👤 ${user.username}</span>
-                <button class="auth-btn" onclick="location.href='dashboard.html'">📊 Dashboard</button>
-                <button class="auth-btn" onclick="logout()">Đăng xuất</button>
+            document.getElementById('authButtons').innerHTML = `
+                <span style="color:var(--primary);font-weight:600;margin-right:12px;">${user.username}</span>
+                <button class="btn btn-primary" onclick="location.href='dashboard.html'">Dashboard</button>
+                <button class="btn btn-outline" onclick="logout()">Đăng xuất</button>
             `;
         }
-        
         function logout() {
-            if (confirm('Bạn có chắc muốn đăng xuất?')) {
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
+            if (confirm('Đăng xuất?')) {
+                localStorage.removeItem('token'); localStorage.removeItem('user');
                 location.reload();
             }
         }
-        
-        let socket = null;
-        let currentBatchNumber = null;
+
+        // Dịch trạng thái
+        function translateStatus(status) {
+            const map = { 'pickup': 'Đã lấy hàng', 'intransit': 'Đang vận chuyển', 'delivered': 'Đã giao hàng' };
+            return map[status] || status;
+        }
+
+        // Dịch loại khách hàng
+        function translateCustomerType(type) {
+            const map = {
+                'individual': 'Cá nhân',
+                'business': 'Doanh nghiệp',
+                'wholesale': 'Bán buôn',
+                'retail': 'Bán lẻ',
+                'export': 'Xuất khẩu'
+            };
+            return map[type] || type;
+        }
+
+        // Hàm tạo dòng có icon
+        function makeInfo(icon, label, value) {
+            if (!value && value !== 0) return '';
+            return `<div class="info-line">
+                <i class="${icon}"></i>
+                <div><strong>${label}:</strong> ${value}</div>
+            </div>`;
+        }
+
+        // Tạo tiêu đề giai đoạn
+        function makeStageHeader(icon, title) {
+            return `<div class="stage-header">
+                <i class="fas ${icon}"></i> ${title}
+            </div>`;
+        }
+
+        // Định dạng từng bước theo giai đoạn
+        function formatHistoryByStages(data) {
+            let html = '';
+
+            // Giai đoạn 1: Thu hoạch (Farmer)
+            const farmerStage = data.filter(item => item.role === 'farmer');
+            if (farmerStage.length > 0) {
+                html += makeStageHeader('fa-seedling', 'GIAI ĐOẠN 1: THU HOẠCH');
+                farmerStage.forEach(item => {
+                    html += formatSingleStep(item, 'farmer');
+                });
+            }
+
+            // Giai đoạn 2: Vận chuyển (Shipper)
+            const shipperStage = data.filter(item => item.role === 'shipper');
+            if (shipperStage.length > 0) {
+                html += makeStageHeader('fa-truck', 'GIAI ĐOẠN 2: VẬN CHUYỂN');
+                shipperStage.forEach(item => {
+                    html += formatSingleStep(item, 'shipper');
+                });
+            }
+
+            // Giai đoạn 3: Sản xuất (Factory)
+            const factoryStage = data.filter(item => item.role === 'factory');
+            if (factoryStage.length > 0) {
+                html += makeStageHeader('fa-cogs', 'GIAI ĐOẠN 3: SẢN XUẤT');
+                factoryStage.forEach(item => {
+                    html += formatSingleStep(item, 'factory');
+                });
+            }
+
+            // Giai đoạn 4: Bán hàng (Retailer)
+            const retailerStage = data.filter(item => item.role === 'retailer');
+            if (retailerStage.length > 0) {
+                html += makeStageHeader('fa-store-alt', 'GIAI ĐOẠN 4: BÁN HÀNG');
+                retailerStage.forEach(item => {
+                    html += formatSingleStep(item, 'retailer');
+                });
+            }
+
+            return html || '<div style="text-align:center;color:#666;padding:20px;">Chưa có dữ liệu</div>';
+        }
+
+        // Format từng bước theo role
+        function formatSingleStep(item, role) {
+            let lines = [];
+
+            lines.push(makeInfo('fas fa-calendar-alt', 'Thời gian', new Date(item.timestamp).toLocaleString('vi-VN')));
+            lines.push(makeInfo('fas fa-map-marker-alt', 'Vị trí', item.location || 'Không xác định'));
+
+            if (role === 'farmer') {
+                if (item.productName) lines.push(makeInfo('fas fa-seedling', 'Sản phẩm', item.productName));
+                if (item.quantity !== undefined) lines.push(makeInfo('fas fa-weight', 'Số lượng', `${item.quantity} kg`));
+                if (item.quality) lines.push(makeInfo('fas fa-award', 'Chất lượng', `Loại ${item.quality.toUpperCase()}`));
+            }
+
+            if (role === 'shipper') {
+                if (item.status) lines.push(makeInfo('fas fa-truck', 'Trạng thái', translateStatus(item.status)));
+                if (item.fromLocation) lines.push(makeInfo('fas fa-arrow-up', 'Từ', item.fromLocation));
+                if (item.toLocation) lines.push(makeInfo('fas fa-arrow-down', 'Đến', item.toLocation));
+            }
+
+            if (role === 'factory') {
+                if (item.processType) {
+                    const processMap = { 'cleaning': 'Làm sạch', 'roasting': 'Rang', 'grinding': 'Xay', 'packaging': 'Đóng gói' };
+                    lines.push(makeInfo('fas fa-cogs', 'Quy trình', processMap[item.processType] || item.processType));
+                }
+            }
+
+            if (role === 'retailer') {
+                if (item.quantity !== undefined) lines.push(makeInfo('fas fa-weight-hanging', 'Số lượng bán', `${item.quantity} kg`));
+                if (item.saleDate) lines.push(makeInfo('fas fa-calendar-check', 'Ngày bán', new Date(item.saleDate).toLocaleDateString('vi-VN')));
+                if (item.price) lines.push(makeInfo('fas fa-money-bill-wave', 'Giá bán', `${parseInt(item.price).toLocaleString('vi-VN')} VNĐ/kg`));
+                if (item.customerType) lines.push(makeInfo('fas fa-users', 'Loại khách hàng', translateCustomerType(item.customerType)));
+            }
+
+            lines.push(makeInfo('fas fa-user', 'Người thực hiện', item.actor));
+
+            return `<div class="timeline-item">
+                <div style="line-height:1.7;">${lines.join('')}</div>
+            </div>`;
+        }
+
         document.getElementById('searchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const batchNumber = document.getElementById('batchNumber').value.trim();
             const resultDiv = document.getElementById('result');
             resultDiv.style.display = 'block';
-            resultDiv.innerHTML = '<div class="loading">⏳ Đang tìm kiếm trên blockchain...</div>';
+            resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#666;">Đang tìm kiếm trên Blockchain...</div>';
+
             try {
                 const response = await fetch(`${window.API_URL}/api/history/${batchNumber}`);
                 const data = await response.json();
-                if (response.ok) {
-                    if (!data || data.length === 0) {
-                        resultDiv.innerHTML = `
-                        <div class="result-title">Kết quả cho batchNumber: <code>${batchNumber}</code></div>
-                        <div class="empty-message">ℹ️ Không tìm thấy lịch sử cho lô hàng này.<br>Lô hàng có thể chưa được ghi nhận trên blockchain.</div>
-                        `;
-                    } else {
-                        let html = `<div class="result-title">📦 Lịch sử lô hàng: <span style='color:#2250b1;font-weight:500'>${batchNumber}</span></div>`;
-                        html += '<div class="timeline" style="margin-top:18px">';
-                        data.forEach(item => {
-                            const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
-                            html += `
-                                <div class="timeline-item" style="background:#fafdff;border:1.5px solid #ebeeff;box-shadow:0 1.5px 14px #93b1fd0c;padding:16px 17px 10px 16px;margin-bottom:14px;border-radius:13px;">
-                                    <div class="timeline-info" style="font-size:1.07em;color:#1d4fad;font-weight:bold;margin-bottom:1px"><span>🆔 BatchNumber:</span> <code>${item.batchNumber || '-'}</code></div>
-                                    <div class="timeline-status" style="font-size:1.13em;color:#444;margin-bottom:2px">📍 ${item.status}</div>
-                                    <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
-                                    <div class="timeline-info"><strong>📍 Vị trí:</strong> ${item.location?item.location:'-'} </div>
-                                    <div class="timeline-info"><strong>👤 Thực hiện bởi:</strong> <code>${item.actor}</code></div>
-                                </div>
-                            `;
-                        });
-                        html += '</div>';
-                        resultDiv.innerHTML = html;
-                    }
+
+                if (response.ok && data.length > 0) {
+                    data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    
+                    const html = `<div class="result-title">Lịch sử hoàn chỉnh lô hàng: <strong>${batchNumber}</strong></div>
+                                 <div class="timeline">
+                                    ${formatHistoryByStages(data)}
+                                 </div>`;
+                    resultDiv.innerHTML = html;
                 } else {
-                    resultDiv.innerHTML = `<div class="empty-message" style="color:#d32f2f;">❌ ${data.error || 'Có lỗi xảy ra'}</div>`;
+                    resultDiv.innerHTML = `<div style="text-align:center;color:#d32f2f;padding:40px;">
+                        Không tìm thấy lô hàng <strong>${batchNumber}</strong><br>
+                        <small style="color:#666;">Lô hàng có thể chưa được ghi nhận trên Blockchain</small>
+                    </div>`;
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<div class="empty-message" style="color:#d32f2f;">❌ Lỗi kết nối server: ${error.message}</div>`;
+                resultDiv.innerHTML = `<div style="text-align:center;color:#d32f2f;padding:40px;">
+                    Lỗi kết nối server: ${error.message}
+                </div>`;
             }
         });
+
         document.addEventListener('DOMContentLoaded', () => {
-            const params = new URLSearchParams(window.location.search);
-            const batchNumber = params.get('batchNumber');
-            if(batchNumber) {
-                document.getElementById('batchNumber').value = batchNumber;
+            const params = new URLSearchParams(location.search);
+            const batch = params.get('batchNumber');
+            if (batch) {
+                document.getElementById('batchNumber').value = batch;
                 document.getElementById('searchForm').dispatchEvent(new Event('submit'));
             }
         });

@@ -35,7 +35,7 @@ class Block {
                 this.index + 
                 this.timestamp + 
                 this.previousHash + 
-                JSON.stringify(dataForHash) + 
+                JSON.stringify(dataForHash) +
                 this.nonce
             )
             .digest('hex');

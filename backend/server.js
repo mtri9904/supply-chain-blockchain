@@ -408,7 +408,7 @@ app.post('/api/record', authenticateToken, async (req, res) => {
                 const key = new NodeRSA();
                 key.importKey(senderPublicKey, 'public');
                 
-                const dataString = JSON.stringify(actualData);
+                const dataString = JSON.stringify(actualData, Object.keys(actualData).sort());
                 const isValid = key.verify(
                     Buffer.from(dataString, 'utf8'),
                     Buffer.from(signature, 'hex'),
@@ -964,264 +964,209 @@ app.post('/api/blockchain/reset', authenticateToken, (req, res) => {
 app.get('/product/:batchNumber', async (req, res) => {
     try {
         const { batchNumber } = req.params;
-
         if (!batchNumber) {
-            return res.status(400).send(`
-                <!DOCTYPE html>
-                <html lang="vi">
-                <head><meta charset="UTF-8"><title>Lỗi</title></head>
-                <body><h1>❌ Thiếu batchNumber</h1></body></html>
-            `);
+            return res.status(400).send(`<h1 style="text-align:center;color:#d32f2f;">Thiếu batchNumber</h1>`);
         }
 
-        // Lấy lịch sử chuỗi cung ứng của batch đó
         const history = supplyChain.getProduct(batchNumber);
         if (!history || history.length === 0) {
             return res.status(404).send(`
-                <!DOCTYPE html>
-                <html lang="vi">
-                <head><meta charset="UTF-8"><title>BATCH không tồn tại</title></head>
-                <body><h1>🔍 Không tìm thấy batch: ${batchNumber}</h1><p>Không có thông tin chuỗi cung ứng.</p></body></html>
+                <div style="text-align:center;padding:60px;font-family:Inter,Arial;">
+                    <h1 style="color:#d32f2f;">Không tìm thấy lô: <strong>${batchNumber}</strong></h1>
+                    <p style="color:#666;">Lô hàng chưa được ghi nhận trên Blockchain.</p>
+                </div>
             `);
         }
-        const productInfo = history[0]; // Block đầu tiên
-        const lastUpdate = history[history.length - 1]; // Block mới nhất
-        // (copy phần render UI như cũ)
-        // ... Keep the existing HTML rendering code, just swap productId -> batchNumber appropriately ...
+
+        const productInfo = history[0];
+        const lastUpdate = history[history.length - 1];
+
+        // Tạo QR Code
+        let qrCodeDataURL = null;
+        if (lastUpdate.qrCode) {
+            qrCodeDataURL = lastUpdate.qrCode;
+        } else {
+            const serverIP = process.env.SERVER_IP || wifiIP;
+            const backendPort = process.env.BACKEND_PORT || '5000';
+            const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNumber)}`;
+            qrCodeDataURL = await QRCode.toDataURL(url, {
+                width: 400,
+                margin: 2,
+                color: { dark: '#1a237e', light: '#FFFFFF' }
+            });
+            // Cập nhật vào block cuối
+            lastUpdate.qrCode = qrCodeDataURL;
+            supplyChain.saveBlockchain();
+        }
+
+        // HTML ĐỒNG BỘ VỚI WEB CHÍNH
         const html = `
 <!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tra cứu batch ${batchNumber} - Supply Chain Blockchain</title>
+    <title>Tra cứu ${batchNumber}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-            padding: 20px;
+        :root {
+            --primary: #1a237e; --primary-hover: #283593; --success: #4caf50; --danger: #f44336;
+            --light: #f8f9fa; --gray: #6c757d; --border: #dee2e6; --shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --radius: 12px; --transition: all 0.2s ease;
         }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif; background: #f6f9fe; color: #253354;
+            min-height: 100vh; line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 20px auto; padding: 0 16px; }
+        .card {
+            background: white; border-radius: var(--radius); box-shadow: var(--shadow);
             overflow: hidden;
         }
         .header {
-            background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: white; padding: 32px 24px; text-align: center;
         }
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
+        .header h1 { font-size: 1.8rem; margin-bottom: 8px; font-weight: 700; }
+        .batch-id {
+            background: rgba(255,255,255,0.2); padding: 8px 20px; border-radius: 30px;
+            display: inline-block; font-weight: 600; font-size: 1.1rem;
         }
-        .header .product-id {
-            font-size: 1.2em;
-            opacity: 0.9;
-            background: rgba(255,255,255,0.2);
-            padding: 8px 16px;
-            border-radius: 20px;
-            display: inline-block;
-        }
-        .content {
-            padding: 30px;
-        }
-        .info-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-left: 4px solid #1a237e;
-        }
-        .info-card h3 {
-            color: #1a237e;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            padding: 8px 0;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        .info-row:last-child {
-            border-bottom: none;
-        }
-        .info-label {
-            font-weight: 600;
-            color: #555;
-        }
-        .info-value {
-            color: #333;
-        }
-        .timeline {
-            margin-top: 30px;
-        }
-        .timeline h3 {
-            color: #1a237e;
-            margin-bottom: 20px;
-            font-size: 1.3em;
+        .content { padding: 24px; }
+
+        .stage-header {
+            margin: 24px 0 12px; padding: 12px 16px;
+            background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+            color: white; border-radius: 8px; font-weight: 600; font-size: 1.1rem;
+            display: flex; align-items: center; gap: 8px;
         }
         .timeline-item {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            position: relative;
-            margin-left: 20px;
+            background: #f8fdff; border-left: 4px solid var(--primary);
+            padding: 16px; border-radius: 8px; margin-bottom: 16px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         }
-        .timeline-item::before {
-            content: '';
-            position: absolute;
-            left: -20px;
-            top: 20px;
-            width: 10px;
-            height: 10px;
-            background: #1a237e;
-            border-radius: 50%;
+        .info-line {
+            display: flex; align-items: flex-start; gap: 10px; margin: 8px 0; font-size: 0.95rem;
         }
-        .timeline-item::after {
-            content: '';
-            position: absolute;
-            left: -15px;
-            top: 30px;
-            width: 2px;
-            height: calc(100% + 10px);
-            background: #e0e0e0;
-        }
-        .timeline-item:last-child::after {
-            display: none;
-        }
-        .timeline-actor {
-            font-weight: 600;
-            color: #1a237e;
-        }
-        .timeline-time {
-            color: #666;
-            font-size: 0.9em;
-        }
-        .timeline-status {
-            margin-top: 5px;
-            color: #333;
-        }
+        .info-line i { color: var(--primary); width: 18px; text-align: center; margin-top: 2px; }
+        .info-line strong { color: #1a237e; min-width: 120px; }
+
         .qr-section {
-            text-align: center;
-            margin-top: 30px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        .qr-code {
-            margin: 20px 0;
+            text-align: center; margin: 32px 0; padding: 20px;
+            background: #f8f9fa; border-radius: var(--radius);
         }
         .qr-code img {
-            max-width: 200px;
-            height: auto;
-            border: 1px solid #ddd;
-            border-radius: 8px;
+            max-width: 220px; height: auto; border: 1px solid #ddd;
+            border-radius: 8px; padding: 8px; background: white;
         }
+        .qr-note {
+            margin-top: 12px; color: #666; font-size: 0.9rem;
+        }
+
         .footer {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            background: #f8f9fa;
+            text-align: center; padding: 24px; color: var(--gray); font-size: 0.9rem;
+            background: rgba(255,255,255,0.8); border-top: 1px solid #eee;
         }
+
         @media (max-width: 600px) {
-            .container { margin: 10px; }
-            .header h1 { font-size: 2em; }
-            .content { padding: 20px; }
-            .info-row { flex-direction: column; }
-            .info-label { margin-bottom: 5px; }
+            .info-line { flex-direction: column; gap: 4px; }
+            .info-line strong { min-width: auto; }
+            .qr-code img { max-width: 180px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>🔍 Tra cứu batchNumber</h1>
-            <div class="product-id">${batchNumber}</div>
-        </div>
-        <div class="content">
-            <div class="info-card">
-                            <h3>📊 Thông tin batch</h3>
-                <div class="info-row"><span class="info-label">Batch Number:</span><span class="info-value">${batchNumber}</span></div>
-                <div class="info-row"><span class="info-label">Tên sản phẩm:</span><span class="info-value">${productInfo.productName || 'N/A'}</span></div>
-                <div class="info-row"><span class="info-label">Trạng thái hiện tại:</span><span class="info-value">${lastUpdate.status || 'N/A'}</span></div>
-                <div class="info-row"><span class="info-label">Vị trí hiện tại:</span><span class="info-value">${lastUpdate.location || 'N/A'}</span></div>
-                <div class="info-row"><span class="info-label">Người cập nhật cuối:</span><span class="info-value">${lastUpdate.actor || 'N/A'}</span></div>
-                <div class="info-row"><span class="info-label">Thời gian cập nhật:</span><span class="info-value">${new Date(lastUpdate.timestamp).toLocaleString('vi-VN')}</span></div>
-                <div class="info-row"><span class="info-label">Số block trong chuỗi:</span><span class="info-value">${history.length}</span></div>
+        <div class="card">
+            <div class="header">
+                <h1>Tra cứu nguồn gốc</h1>
+                <div class="batch-id">${batchNumber}</div>
             </div>
-            <div class="timeline">
-                <h3>📈 Lịch sử chuỗi cung ứng</h3>
-                ${history.map((item, index) => {
-                    // Map trạng thái sang tiếng Việt
-                    const statusVNMap = {
-                        'pickup': 'Đã lấy hàng',
-                        'intransit': 'Đang vận chuyển',
-                        'delivered': 'Đã giao hàng'
-                    };
-                    
-                    let displayStatus = item.status || 'N/A';
-                    
-                    // Nếu là shipper, check trong status text có chứa các từ khóa
-                    if (item.role === 'shipper' && item.status) {
-                        // Tìm status code từ item
-                        for (const [code, vnText] of Object.entries(statusVNMap)) {
-                            if (item.status.includes(code) || (item.details && item.details.status === code)) {
-                                // Extract from/to location từ status string
-                                const parts = item.status.split('-');
-                                if (parts.length > 1) {
-                                    displayStatus = vnText + ' -' + parts.slice(1).join('-');
-                                } else {
-                                    displayStatus = vnText;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    
-                    return `
-                    <div class="timeline-item">
-                        <div class="timeline-actor">${item.actor || 'Unknown'} - ${item.role || 'N/A'}</div>
-                        <div class="timeline-time">${new Date(item.timestamp).toLocaleString('vi-VN')}</div>
-                        <div class="timeline-status">${displayStatus}</div>
-                        ${item.batchNumber ? `<div style="color: #0277bd; font-size: 0.9em; margin-top: 3px;">🏷️ Batch: ${item.batchNumber}</div>` : ''}
-                        ${item.location ? `<div style="color: #666; font-size: 0.9em; margin-top: 5px;">📍 ${item.location}</div>` : ''}
-                    </div>
-                    `;
-                }).join('')}
-            </div>
-            ${(productInfo.qrCode ? `
-            <div class="qr-section">
-                <h3>📱 QR Code sản phẩm</h3>
-                <div class="qr-code">
-                    <img src="${productInfo.qrCode}" alt="QR Code cho batch ${batchNumber}">
+
+            <div class="content">
+                <!-- Giai đoạn 1: Thu hoạch -->
+                ${history.filter(h => h.role === 'farmer').length > 0 ? `
+                <div class="stage-header"><i class="fas fa-seedling"></i> GIAI ĐOẠN 1: THU HOẠCH</div>
+                ${history.filter(h => h.role === 'farmer').map(item => `
+                <div class="timeline-item">
+                    <div class="info-line"><i class="fas fa-calendar-alt"></i><div><strong>Thời gian:</strong> ${new Date(item.timestamp).toLocaleString('vi-VN')}</div></div>
+                    <div class="info-line"><i class="fas fa-map-marker-alt"></i><div><strong>Vị trí:</strong> ${item.location || 'N/A'}</div></div>
+                    ${item.productName ? `<div class="info-line"><i class="fas fa-seedling"></i><div><strong>Sản phẩm:</strong> ${item.productName}</div></div>` : ''}
+                    ${item.quantity ? `<div class="info-line"><i class="fas fa-weight"></i><div><strong>Số lượng:</strong> ${item.quantity} kg</div></div>` : ''}
+                    ${item.quality ? `<div class="info-line"><i class="fas fa-award"></i><div><strong>Chất lượng:</strong> Loại ${item.quality.toUpperCase()}</div></div>` : ''}
+                    <div class="info-line"><i class="fas fa-user"></i><div><strong>Người thực hiện:</strong> ${item.actor}</div></div>
                 </div>
-                <p>Quét QR code này để chia sẻ thông tin batch</p>
+                `).join('')}
+                ` : ''}
+
+                <!-- Giai đoạn 2: Vận chuyển -->
+                ${history.filter(h => h.role === 'shipper').length > 0 ? `
+                <div class="stage-header"><i class="fas fa-truck"></i> GIAI ĐOẠN 2: VẬN CHUYỂN</div>
+                ${history.filter(h => h.role === 'shipper').map(item => `
+                <div class="timeline-item">
+                    <div class="info-line"><i class="fas fa-calendar-alt"></i><div><strong>Thời gian:</strong> ${new Date(item.timestamp).toLocaleString('vi-VN')}</div></div>
+                    <div class="info-line"><i class="fas fa-truck"></i><div><strong>Trạng thái:</strong> ${item.status.includes('Đã lấy hàng') ? 'Đã lấy hàng' : item.status.includes('Đang vận chuyển') ? 'Đang vận chuyển' : 'Đã giao hàng'}</div></div>
+                    ${item.fromLocation ? `<div class="info-line"><i class="fas fa-arrow-up"></i><div><strong>Từ:</strong> ${item.fromLocation}</div></div>` : ''}
+                    ${item.toLocation ? `<div class="info-line"><i class="fas fa-arrow-down"></i><div><strong>Đến:</strong> ${item.toLocation}</div></div>` : ''}
+                    <div class="info-line"><i class="fas fa-user"></i><div><strong>Người thực hiện:</strong> ${item.actor}</div></div>
+                </div>
+                `).join('')}
+                ` : ''}
+
+                <!-- Giai đoạn 3: Sản xuất -->
+                ${history.filter(h => h.role === 'factory').length > 0 ? `
+                <div class="stage-header"><i class="fas fa-cogs"></i> GIAI ĐOẠN 3: SẢN XUẤT</div>
+                ${history.filter(h => h.role === 'factory').map(item => `
+                <div class="timeline-item">
+                    <div class="info-line"><i class="fas fa-calendar-alt"></i><div><strong>Thời gian:</strong> ${new Date(item.timestamp).toLocaleString('vi-VN')}</div></div>
+                    <div class="info-line"><i class="fas fa-map-marker-alt"></i><div><strong>Vị trí:</strong> ${item.location || 'N/A'}</div></div>
+                    <div class="info-line"><i class="fas fa-cogs"></i><div><strong>Quy trình:</strong> ${item.processType === 'cleaning' ? 'Làm sạch' : item.processType === 'roasting' ? 'Rang' : item.processType === 'grinding' ? 'Xay' : 'Đóng gói'}</div></div>
+                    <div class="info-line"><i class="fas fa-user"></i><div><strong>Người thực hiện:</strong> ${item.actor}</div></div>
+                </div>
+                `).join('')}
+                ` : ''}
+
+                <!-- Giai đoạn 4: Bán hàng -->
+                ${history.filter(h => h.role === 'retailer').length > 0 ? `
+                <div class="stage-header"><i class="fas fa-store-alt"></i> GIAI ĐOẠN 4: BÁN HÀNG</div>
+                ${history.filter(h => h.role === 'retailer').map(item => `
+                <div class="timeline-item">
+                    <div class="info-line"><i class="fas fa-calendar-alt"></i><div><strong>Thời gian:</strong> ${new Date(item.timestamp).toLocaleString('vi-VN')}</div></div>
+                    <div class="info-line"><i class="fas fa-map-marker-alt"></i><div><strong>Vị trí:</strong> ${item.location || 'N/A'}</div></div>
+                    ${item.quantity ? `<div class="info-line"><i class="fas fa-weight-hanging"></i><div><strong>Số lượng bán:</strong> ${item.quantity} kg</div></div>` : ''}
+                    ${item.saleDate ? `<div class="info-line"><i class="fas fa-calendar-check"></i><div><strong>Ngày bán:</strong> ${new Date(item.saleDate).toLocaleDateString('vi-VN')}</div></div>` : ''}
+                    ${item.price ? `<div class="info-line"><i class="fas fa-money-bill-wave"></i><div><strong>Giá bán:</strong> ${parseInt(item.price).toLocaleString('vi-VN')} VNĐ/kg</div></div>` : ''}
+                    ${item.customerType ? `<div class="info-line"><i class="fas fa-users"></i><div><strong>Loại khách hàng:</strong> ${item.customerType === 'individual' ? 'Cá nhân' : item.customerType === 'business' ? 'Doanh nghiệp' : item.customerType}</div></div>` : ''}
+                    <div class="info-line"><i class="fas fa-user"></i><div><strong>Người thực hiện:</strong> ${item.actor}</div></div>
+                </div>
+                `).join('')}
+                ` : ''}
+
+                <!-- QR Code -->
+                <div class="qr-section">
+                    <h3 style="margin-bottom:16px;color:var(--primary);">QR Code tra cứu</h3>
+                    <div class="qr-code">
+                        <img src="${qrCodeDataURL}" alt="QR Code">
+                    </div>
+                    <p class="qr-note">Quét mã này để xem thông tin nguồn gốc</p>
+                </div>
             </div>
-            ` : '')}
         </div>
-        <div class="footer">
-            <p>Supply Chain Blockchain System</p>
-            <p>Thời gian tra cứu: ${new Date().toLocaleString('vi-VN')}</p>
-        </div>
+    </div>
+
+    <div class="footer">
+        © 2025 Supply Chain Blockchain | Hỗ trợ: 1900-9999
     </div>
 </body>
 </html>
         `;
+
         res.send(html);
     } catch (error) {
-        console.error('Lỗi serve trang tra cứu:', error);
-        res.status(500).send('<h1>❌ Không thể tải thông tin batch</h1>');
+        console.error('Lỗi render trang QR:', error);
+        res.status(500).send(`<h1 style="text-align:center;color:#d32f2f;">Lỗi hệ thống</h1>`);
     }
 });
 
