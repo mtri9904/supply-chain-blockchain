@@ -6,11 +6,38 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const QRCode = require('qrcode');
+const path = require('path');
+const fs = require('fs');
 const { Blockchain } = require('./MyBlockchain');
+const PeerManager = require('./network/PeerManager');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const NodeRSA = require('node-rsa');
 require('dotenv').config();
+
+const parseCliArgs = (argv = []) => argv.reduce((acc, arg) => {
+    if (!arg.startsWith('--')) return acc;
+    const [key, ...valueParts] = arg.slice(2).split('=');
+    acc[key] = valueParts.length > 0 ? valueParts.join('=') : true;
+    return acc;
+}, {});
+
+const cliArgs = parseCliArgs(process.argv.slice(2));
+
+const loadInitialChain = (dataFile) => {
+    try {
+        if (fs.existsSync(dataFile)) {
+            const raw = fs.readFileSync(dataFile, 'utf8');
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed.chain) && parsed.chain.length > 0) {
+                return parsed;
+            }
+        }
+    } catch (error) {
+        console.warn('⚠️ Không thể load dữ liệu blockchain ban đầu:', error.message);
+    }
+    return null;
+};
 
 // Tự động phát hiện IP mạng WiFi
 function getWiFiIP() {
@@ -34,6 +61,30 @@ function getWiFiIP() {
 const wifiIP = getWiFiIP();
 console.log(`🌐 Phát hiện IP WiFi: ${wifiIP}`);
 
+const DEFAULT_PORT = 5000;
+const parsedPort = parseInt(cliArgs.port || process.env.PORT || DEFAULT_PORT, 10);
+const PORT = Number.isInteger(parsedPort) ? parsedPort : DEFAULT_PORT;
+
+const defaultDataDir = path.join(__dirname, 'node-data');
+const rawDataFile = cliArgs.dataFile || process.env.DATA_FILE || path.join(defaultDataDir, `node_${PORT}.json`);
+const DATA_FILE = path.resolve(rawDataFile);
+
+if (!fs.existsSync(path.dirname(DATA_FILE))) {
+    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+}
+
+const difficultyFromConfig = parseInt(cliArgs.difficulty || process.env.DIFFICULTY || '4', 10);
+const BLOCKCHAIN_DIFFICULTY = Number.isInteger(difficultyFromConfig) ? difficultyFromConfig : 4;
+
+const DEFAULT_HOST = wifiIP || 'localhost';
+const hostConfig = cliArgs.host || process.env.NODE_HOST || DEFAULT_HOST;
+const baseUrlCandidate = (cliArgs.baseUrl || process.env.BASE_URL || `http://${hostConfig}:${PORT}`).replace(/\/$/, '');
+const NODE_BASE_URL = baseUrlCandidate;
+const NODE_ID = cliArgs.name || process.env.NODE_ID || `node-${PORT}`;
+
+const peersInput = cliArgs.peers || process.env.PEERS;
+const INITIAL_PEERS = peersInput ? peersInput.split(',').map(p => p.trim()).filter(Boolean) : [];
+
 // Cấu hình CORS chi tiết (cho phép cả localhost và IP)
 const corsOptions = {
     origin: [
@@ -41,14 +92,16 @@ const corsOptions = {
         'http://127.0.0.1:5500', 
         'http://localhost:3000',
         `http://${wifiIP}:5500`,  // IP WiFi tự động phát hiện (frontend)
-        `http://${wifiIP}:5000`,  // IP WiFi tự động phát hiện (backend)
+        `http://${wifiIP}:${PORT}`,  // Backend động
         `http://${wifiIP}:5500/supply-chain-blockchain/frontend`,  // Full path frontend
+        `http://localhost:${PORT}`,
+        NODE_BASE_URL,
         'http://172.16.16.65:5500',  // IP cũ (backup)
-        'http://172.16.16.65:5000',  // IP cũ backend (backup)
+        `http://172.16.16.65:${PORT}`,  // IP cũ backend (backup)
         'http://172.16.16.65:5500/supply-chain-blockchain/frontend',  // Full path cũ
         // Thêm các IP động từ biến môi trường
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.SERVER_PORT || '5500'}` : null,
-        process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.BACKEND_PORT || '5000'}` : null,
+        process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.BACKEND_PORT || PORT}` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.SERVER_PORT || '5500'}/supply-chain-blockchain/frontend` : null
     ].filter(Boolean), // Loại bỏ null values
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -134,8 +187,29 @@ app.use((err, req, res, next) => {
 
 // Khởi tạo blockchain với difficulty = 4 (4 chữ số 0 đầu tiên)
 // Có thể thay đổi difficulty: 2 = dễ (vài giây), 4 = trung bình (10-30s), 5 = khó (1-2 phút)
-const supplyChain = new Blockchain(4);
-console.log('✅ Blockchain đã khởi tạo với Proof of Work (difficulty = 4)');
+const supplyChain = new Blockchain({
+    difficulty: BLOCKCHAIN_DIFFICULTY,
+    dataFile: DATA_FILE,
+    initialChainData: loadInitialChain(DATA_FILE)
+});
+console.log(`✅ Blockchain đã khởi tạo với Proof of Work (difficulty = ${BLOCKCHAIN_DIFFICULTY})`);
+console.log(`🗃️  File dữ liệu blockchain: ${DATA_FILE}`);
+
+const peerManager = new PeerManager({
+    nodeId: NODE_ID,
+    baseUrl: NODE_BASE_URL,
+    blockchain: supplyChain,
+    initialPeers: INITIAL_PEERS
+});
+
+global.peerManager = peerManager;
+console.log(`🛰️  Node ID: ${NODE_ID}`);
+console.log(`🌐 Base URL: ${NODE_BASE_URL}`);
+if (INITIAL_PEERS.length > 0) {
+    console.log('🤝 Peers ban đầu:', INITIAL_PEERS);
+} else {
+    console.log('ℹ️ Chưa cấu hình peer ban đầu.');
+}
 
 // Cấu hình SQL Server
 const config = {
@@ -656,11 +730,16 @@ app.post('/api/record', authenticateToken, async (req, res) => {
         
         const newBlock = supplyChain.addBlock(dataForBlock);
 
+        const serializedBlock = supplyChain.serializeBlock(newBlock);
+        peerManager.broadcastBlock(serializedBlock)
+            .then(() => console.log(`📡 Đã broadcast block #${newBlock.index} tới các peer`))
+            .catch((err) => console.error('⚠️ Lỗi broadcast block tới peer:', err.message));
+
         // Sau khi thêm block, nếu chưa có trường qrCode thì sinh và cập nhật vào block ngay
         if (newBlock && !newBlock.data.qrCode && newBlock.data.batchNumber) {
             try {
                 const serverIP = process.env.SERVER_IP || wifiIP;
-                const backendPort = process.env.BACKEND_PORT || '5000';
+                const backendPort = process.env.BACKEND_PORT || PORT;
                 const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(newBlock.data.batchNumber)}`;
                 const qrCode = await QRCode.toDataURL(url, { width: 400, margin: 2, color: { dark: '#1a237e', light: '#FFFFFF' }});
                 newBlock.data.qrCode = qrCode;
@@ -719,32 +798,39 @@ app.get('/api/user-history/:username', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: 'Thiếu tên người dùng' });
         }
 
-        // Kiểm tra người dùng chỉ có thể xem lịch sử của chính mình
         if (req.user.username !== username) {
             return res.status(403).json({ message: 'Không có quyền xem lịch sử của người khác' });
         }
 
+        const serverIP = process.env.SERVER_IP || wifiIP;
+        const backendPort = process.env.BACKEND_PORT || PORT;
+        const qrCache = new Map();
+
         const userRecords = await Promise.all(supplyChain.chain
-            .slice(1) // Bỏ qua genesis block
+            .slice(1)
             .filter(block => block.data && block.data.actor === username)
             .map(async block => {
-                let qrCode = block.data.qrCode || null;
                 let batchNum = block.data.batchNumber;
-                // Nếu là block của farmer không có batchNumber nhưng có productName,
-                // tìm block đầu cùng productName để lấy batchNumber
                 if (!batchNum && block.data.productName) {
                     const batchBlock = supplyChain.chain.find(b => b.data && b.data.productName === block.data.productName && b.data.batchNumber);
                     if (batchBlock) batchNum = batchBlock.data.batchNumber;
                 }
-                // Nếu vẫn chưa có QR code mà đã xác định batchNumber, sinh QR cho batch này
-                if (!qrCode && batchNum) {
-                    try {
-                        const serverIP = process.env.SERVER_IP || wifiIP;
-                        const backendPort = process.env.BACKEND_PORT || '5000';
-                        const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNum)}`;
-                        qrCode = await QRCode.toDataURL(url, { width: 400, margin: 2, color: { dark: '#1a237e', light: '#FFFFFF' }});
-                    } catch(err) { qrCode = null; }
+
+                let qrCode = block.data.qrCode || null;
+                if (batchNum) {
+                    if (qrCache.has(batchNum)) {
+                        qrCode = qrCache.get(batchNum);
+                    } else {
+                        try {
+                            const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNum)}`;
+                            qrCode = await QRCode.toDataURL(url, { width: 400, margin: 2, color: { dark: '#1a237e', light: '#FFFFFF' } });
+                            qrCache.set(batchNum, qrCode);
+                        } catch (err) {
+                            console.error('⚠️ Lỗi tạo QR cho lịch sử:', err.message);
+                        }
+                    }
                 }
+
                 return {
                     productName: block.data.productName,
                     batchNumber: batchNum || block.data.batchNumber,
@@ -755,7 +841,6 @@ app.get('/api/user-history/:username', authenticateToken, async (req, res) => {
                     actor: block.data.actor,
                     details: block.data.details || {},
                     qrCode: qrCode,
-                    // Thêm thông tin vận chuyển nếu có
                     fromLocation: block.data.fromLocation,
                     toLocation: block.data.toLocation,
                     transportStatus: block.data.status
@@ -1033,7 +1118,7 @@ app.get('/product/:batchNumber', async (req, res) => {
             qrCodeDataURL = lastUpdate.qrCode;
         } else {
             const serverIP = process.env.SERVER_IP || wifiIP;
-            const backendPort = process.env.BACKEND_PORT || '5000';
+            const backendPort = process.env.BACKEND_PORT || PORT;
             const url = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNumber)}`;
             qrCodeDataURL = await QRCode.toDataURL(url, {
                 width: 400,
@@ -1229,7 +1314,7 @@ app.get('/api/qrcode/:batchNumber', async (req, res) => {
         }
         // URL cho batch
         const serverIP = process.env.SERVER_IP || wifiIP;
-        const backendPort = process.env.BACKEND_PORT || '5000';
+        const backendPort = process.env.BACKEND_PORT || PORT;
         const queryURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(batchNumber)}`;
         // Tạo QR code
         const qrCodeDataURL = await QRCode.toDataURL(queryURL, {
@@ -1452,6 +1537,128 @@ app.get('/api/product-history', async (req, res) => {
     })) : []);
 });
 
+// ----- P2P ROUTES -----
+app.get('/p2p/peers', (req, res) => {
+    res.json({
+        success: true,
+        node: {
+            id: NODE_ID,
+            url: NODE_BASE_URL
+        },
+        peers: peerManager.getPeerList()
+    });
+});
+
+app.post('/p2p/peers', (req, res) => {
+    const { peer, peers } = req.body || {};
+
+    if (!peer && !Array.isArray(peers)) {
+        return res.status(400).json({
+            success: false,
+            message: 'Thiếu peer để đăng ký'
+        });
+    }
+
+    const addedPeers = [];
+
+    if (Array.isArray(peers)) {
+        peers.forEach(p => {
+            const added = peerManager.addPeer(p);
+            if (added) {
+                addedPeers.push(added);
+                setImmediate(() => peerManager.registerWithPeer(added).catch(err => console.error('⚠️ Lỗi đăng ký peer:', err.message)));
+            }
+        });
+    }
+
+    if (peer) {
+        const added = peerManager.addPeer(peer);
+        if (added) {
+            addedPeers.push(added);
+            setImmediate(() => peerManager.registerWithPeer(added).catch(err => console.error('⚠️ Lỗi đăng ký peer:', err.message)));
+        }
+    }
+
+    res.json({
+        success: true,
+        added: addedPeers,
+        node: {
+            id: NODE_ID,
+            url: NODE_BASE_URL
+        },
+        peers: peerManager.getPeerList()
+    });
+});
+
+app.post('/p2p/block', (req, res) => {
+    const { block, sender } = req.body || {};
+
+    if (!block) {
+        return res.status(400).json({
+            success: false,
+            message: 'Thiếu block trong payload'
+        });
+    }
+
+    if (sender) {
+        peerManager.addPeer(sender);
+    }
+
+    const result = supplyChain.addBlockFromNetwork(block);
+
+    if (result.success) {
+        return res.json({
+            success: true,
+            message: 'Đã ghi nhận block từ peer'
+        });
+    }
+
+    if (result.reason === 'BLOCK_ALREADY_EXISTS') {
+        return res.json({
+            success: true,
+            message: 'Block đã tồn tại'
+        });
+    }
+
+    if (['OUT_OF_SYNC', 'PREVIOUS_HASH_MISMATCH'].includes(result.reason)) {
+        setImmediate(() => {
+            peerManager.syncWithPeers().catch(err => console.error('⚠️ Lỗi đồng bộ với peers:', err.message));
+        });
+        return res.status(409).json({
+            success: false,
+            message: 'Chuỗi blockchain không đồng bộ. Đang yêu cầu đồng bộ từ peers.',
+            reason: result.reason,
+            expectedIndex: result.expectedIndex
+        });
+    }
+
+    return res.status(400).json({
+        success: false,
+        message: 'Block không hợp lệ',
+        reason: result.reason
+    });
+});
+
+app.get('/p2p/chain', (req, res) => {
+    res.json({
+        success: true,
+        node: {
+            id: NODE_ID,
+            url: NODE_BASE_URL
+        },
+        chain: supplyChain.getChainSnapshot()
+    });
+});
+
+app.post('/p2p/sync', async (req, res) => {
+    try {
+        await peerManager.syncWithPeers();
+        res.json({ success: true, message: 'Đã yêu cầu đồng bộ với peers' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Lỗi đồng bộ', error: error.message });
+    }
+});
+
 // Handle 404 - Đặt sau tất cả các route
 app.use((req, res, next) => {
     res.status(404).json({ message: 'API endpoint không tồn tại' });
@@ -1466,11 +1673,17 @@ app.use((err, req, res, next) => {
     });
 });
 
-const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server đang chạy tại:`);
     console.log(`   - Local: http://localhost:${PORT}`);
     console.log(`   - Network: http://${wifiIP}:${PORT}`);
+    console.log(`   - Node URL: ${NODE_BASE_URL}`);
     console.log(`🔌 WebSocket server đã sẵn sàng cho real-time updates`);
     console.log(`📱 Để truy cập từ điện thoại, sử dụng: http://${wifiIP}:${PORT}`);
+
+    setImmediate(() => {
+        peerManager.connectToPeers()
+            .then(() => peerManager.syncWithPeers())
+            .catch(err => console.error('⚠️ Lỗi khởi động P2P:', err.message));
+    });
 });

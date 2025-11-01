@@ -1,0 +1,546 @@
+===========================================
+DEMO LUỒNG HOẠT ĐỘNG HỆ THỐNG BLOCKCHAIN PHI TẬP TRUNG
+===========================================
+
+1. KHỞI TẠO HỆ THỐNG
+-------------------
+
+a) Cấu trúc thư mục:
+```
+supply-chain-blockchain/
+├── node-data/
+│   ├── node1/                 # Node của Samsung
+│   │   ├── blockchain.json    # Dữ liệu chuỗi khối
+│   │   ├── users.json        # Thông tin người dùng
+│   │   └── state.json        # Trạng thái node
+│   ├── node2/                 # Node của Tech Distributor
+│   └── node3/                 # Node của FPT Retail
+├── backend/
+│   └── server.js             # Server code cho mỗi node
+└── frontend/
+    └── dashboard.html        # Giao diện người dùng
+```
+
+b) Khởi động các node:
+```powershell
+# Khởi động node 1 (Samsung)
+npm run start-node -- --port=5001 --dataFile=node-data/node1/blockchain.json
+
+# Khởi động node 2 (Tech Distributor)
+npm run start-node -- --port=5002 --dataFile=node-data/node2/blockchain.json --peers=http://localhost:5001
+
+# Khởi động node 3 (FPT Retail)
+npm run start-node -- --port=5003 --dataFile=node-data/node3/blockchain.json --peers=http://localhost:5001,http://localhost:5002
+```
+
+2. DEMO LUỒNG HOẠT ĐỘNG
+----------------------
+
+2.1. ĐĂNG KÝ VÀ ĐĂNG NHẬP
+```
+a) Đăng ký tài khoản Manufacturer (Samsung):
+POST http://localhost:5001/api/auth/register
+{
+    "username": "samsung_admin",
+    "password": "****",
+    "role": "manufacturer",
+    "companyName": "Samsung Electronics",
+    "companyId": "SAMSUNG001"
+}
+
+b) Đăng ký tài khoản Distributor:
+POST http://localhost:5002/api/auth/register
+{
+    "username": "tech_dist",
+    "password": "****",
+    "role": "distributor",
+    "companyName": "Tech Distribution Corp",
+    "companyId": "DIST001"
+}
+
+c) Đăng ký tài khoản Retailer (FPT):
+POST http://localhost:5003/api/auth/register
+{
+    "username": "fpt_retail",
+    "password": "****",
+    "role": "retailer",
+    "companyName": "FPT Retail",
+    "companyId": "RET001"
+}
+```
+
+2.2. MANUFACTURER TẠO SẢN PHẨM MỚI
+```
+a) Samsung tạo lô Galaxy S25:
+POST http://localhost:5001/api/products
+Headers: { "Authorization": "Bearer SAMSUNG_TOKEN" }
+Body: {
+    "productId": "GALAXY-S25",
+    "name": "Samsung Galaxy S25",
+    "category": "Smartphone",
+    "specifications": {
+        "ram": "12GB",
+        "storage": "256GB",
+        "color": "Phantom Black"
+    }
+}
+
+b) Tạo lô sản xuất:
+POST http://localhost:5001/api/production
+Headers: { "Authorization": "Bearer SAMSUNG_TOKEN" }
+Body: {
+    "type": "PRODUCTION",
+    "productId": "GALAXY-S25",
+    "batchNumber": "S25-2025-001",
+    "quantity": 1000,
+    "manufacturingDate": "2025-11-01",
+    "factoryId": "SAMSUNG-FAC-001"
+}
+```
+
+Blockchain lưu trữ:
+```json
+// node-data/node1/blockchain.json
+{
+    "blockId": "block123",
+    "timestamp": "2025-11-01T08:00:00Z",
+    "transaction": {
+        "type": "PRODUCTION",
+        "productId": "GALAXY-S25",
+        "batchNumber": "S25-2025-001",
+        "quantity": 1000,
+        "manufacturer": "SAMSUNG001",
+        "timestamp": "2025-11-01T08:00:00Z"
+    },
+    "previousHash": "...",
+    "hash": "..."
+}
+```
+
+2.3. DISTRIBUTOR NHẬN VÀ PHÂN PHỐI HÀNG
+```
+a) Tech Distribution nhận hàng từ Samsung:
+POST http://localhost:5002/api/distribution/receive
+Headers: { "Authorization": "Bearer DIST_TOKEN" }
+Body: {
+    "type": "DISTRIBUTION_RECEIPT",
+    "batchNumber": "S25-2025-001",
+    "quantity": 1000,
+    "fromManufacturer": "SAMSUNG001",
+    "warehouseId": "DIST-WH-001",
+    "receiptDate": "2025-11-02"
+}
+
+b) Phân phối cho các Retailer:
+POST http://localhost:5002/api/distribution/dispatch
+Headers: { "Authorization": "Bearer DIST_TOKEN" }
+Body: {
+    "type": "DISTRIBUTION_DISPATCH",
+    "batchNumber": "S25-2025-001",
+    "quantity": 500,
+    "toRetailer": "RET001",
+    "fromWarehouse": "DIST-WH-001",
+    "dispatchDate": "2025-11-03",
+    "transportId": "TRANS001"
+}
+```
+
+2.4. RETAILER NHẬN HÀNG VÀ BÁN LẺ
+```
+a) FPT Retail nhận hàng:
+POST http://localhost:5003/api/retail/receive
+Headers: { "Authorization": "Bearer FPT_TOKEN" }
+Body: {
+    "type": "RETAIL_RECEIPT",
+    "batchNumber": "S25-2025-001",
+    "quantity": 500,
+    "fromDistributor": "DIST001",
+    "storeId": "FPT-STORE-001",
+    "receiptDate": "2025-11-04"
+}
+
+b) Bán cho khách hàng:
+POST http://localhost:5003/api/retail/sale
+Headers: { "Authorization": "Bearer FPT_TOKEN" }
+Body: {
+    "type": "RETAIL_SALE",
+    "productId": "GALAXY-S25",
+    "batchNumber": "S25-2025-001",
+    "quantity": 1,
+    "storeId": "FPT-STORE-001",
+    "saleDate": "2025-11-05",
+    "serialNumber": "S25-001-123"
+}
+```
+
+3. TRUY XUẤT THÔNG TIN
+---------------------
+
+3.1. TRUY XUẤT THEO SẢN PHẨM
+```
+GET http://localhost:5001/api/trace/product/GALAXY-S25
+Response:
+{
+    "product": {
+        "id": "GALAXY-S25",
+        "name": "Samsung Galaxy S25",
+        "manufacturer": "Samsung Electronics"
+    },
+    "batches": [
+        {
+            "batchNumber": "S25-2025-001",
+            "quantity": 1000,
+            "journey": [
+                {
+                    "type": "PRODUCTION",
+                    "timestamp": "2025-11-01T08:00:00Z",
+                    "actor": "Samsung Electronics",
+                    "location": "Samsung Factory 001",
+                    "quantity": 1000
+                },
+                {
+                    "type": "DISTRIBUTION_RECEIPT",
+                    "timestamp": "2025-11-02T10:00:00Z",
+                    "actor": "Tech Distribution Corp",
+                    "location": "Warehouse DIST-WH-001",
+                    "quantity": 1000
+                },
+                {
+                    "type": "DISTRIBUTION_DISPATCH",
+                    "timestamp": "2025-11-03T14:00:00Z",
+                    "actor": "Tech Distribution Corp",
+                    "location": "Warehouse DIST-WH-001",
+                    "quantity": 500,
+                    "destination": "FPT Retail"
+                },
+                {
+                    "type": "RETAIL_RECEIPT",
+                    "timestamp": "2025-11-04T09:00:00Z",
+                    "actor": "FPT Retail",
+                    "location": "Store FPT-STORE-001",
+                    "quantity": 500
+                }
+            ]
+        }
+    ]
+}
+```
+
+3.2. TRUY XUẤT THEO SERIAL NUMBER
+```
+GET http://localhost:5001/api/trace/serial/S25-001-123
+Response:
+{
+    "serialNumber": "S25-001-123",
+    "product": {
+        "id": "GALAXY-S25",
+        "name": "Samsung Galaxy S25"
+    },
+    "journey": [
+        {
+            "type": "PRODUCTION",
+            "timestamp": "2025-11-01T08:00:00Z",
+            "location": "Samsung Factory 001"
+        },
+        {
+            "type": "DISTRIBUTION",
+            "timestamp": "2025-11-02T10:00:00Z",
+            "location": "Tech Distribution Warehouse"
+        },
+        {
+            "type": "RETAIL_RECEIPT",
+            "timestamp": "2025-11-04T09:00:00Z",
+            "location": "FPT Store 001"
+        },
+        {
+            "type": "RETAIL_SALE",
+            "timestamp": "2025-11-05T15:30:00Z",
+            "location": "FPT Store 001"
+        }
+    ]
+}
+```
+
+4. DASHBOARD VÀ BÁO CÁO
+----------------------
+
+4.1. MANUFACTURER DASHBOARD
+```
+GET http://localhost:5001/api/dashboard/manufacturer
+Headers: { "Authorization": "Bearer SAMSUNG_TOKEN" }
+Response:
+{
+    "totalProduction": 1000,
+    "activeBatches": [
+        {
+            "batchNumber": "S25-2025-001",
+            "product": "GALAXY-S25",
+            "quantity": 1000,
+            "status": "In Distribution"
+        }
+    ],
+    "distributionStatus": {
+        "inWarehouse": 0,
+        "inTransit": 500,
+        "delivered": 500
+    }
+}
+```
+
+4.2. DISTRIBUTOR DASHBOARD
+```
+GET http://localhost:5002/api/dashboard/distributor
+Headers: { "Authorization": "Bearer DIST_TOKEN" }
+Response:
+{
+    "inventory": {
+        "received": 1000,
+        "dispatched": 500,
+        "inStock": 500
+    },
+    "activeShipments": [
+        {
+            "transportId": "TRANS001",
+            "batchNumber": "S25-2025-001",
+            "quantity": 500,
+            "status": "Delivered"
+        }
+    ]
+}
+```
+
+4.3. RETAILER DASHBOARD
+```
+GET http://localhost:5003/api/dashboard/retailer
+Headers: { "Authorization": "Bearer FPT_TOKEN" }
+Response:
+{
+    "inventory": {
+        "received": 500,
+        "sold": 1,
+        "inStock": 499
+    },
+    "salesData": {
+        "today": 1,
+        "thisWeek": 1,
+        "thisMonth": 1
+    }
+}
+```
+
+5. ĐỒNG BỘ DỮ LIỆU GIỮA CÁC NODE
+-------------------------------
+
+5.1. KHI CÓ TRANSACTION MỚI
+```javascript
+// 1. Node tạo block mới
+const newBlock = await blockchain.createBlock(transaction);
+
+// 2. Lưu vào blockchain local
+await blockchain.addBlock(newBlock);
+
+// 3. Broadcast tới các node khác
+await peers.broadcastBlock(newBlock);
+
+// 4. Các node khác verify và thêm block
+peers.on('newBlock', async (block) => {
+    if (await blockchain.isValidBlock(block)) {
+        await blockchain.addBlock(block);
+    }
+});
+```
+
+5.2. KHI NODE MỚI THAM GIA
+```javascript
+// 1. Node mới kết nối với peers
+await peerManager.connect(['http://localhost:5001']);
+
+// 2. Yêu cầu blockchain hiện tại
+const chain = await peers.requestCurrentChain();
+
+// 3. Verify và đồng bộ
+if (await blockchain.isValidChain(chain)) {
+    await blockchain.replaceChain(chain);
+}
+```
+
+6. XỬ LÝ LỖI VÀ RECOVERY
+-----------------------
+
+6.1. NODE FAILURE
+```javascript
+// 1. Detect node failure
+peerManager.on('nodeDown', async (nodeUrl) => {
+    // Remove from active peers
+    await peerManager.removePeer(nodeUrl);
+    // Notify admin
+    await notifyAdmin(`Node ${nodeUrl} is down`);
+});
+
+// 2. Node recovery
+async function recoverNode() {
+    // Get latest chain from peers
+    const chains = await peerManager.requestChainsFromPeers();
+    // Select longest valid chain
+    const validChain = await blockchain.selectValidChain(chains);
+    // Replace local chain
+    await blockchain.replaceChain(validChain);
+}
+```
+
+6.2. CONFLICT RESOLUTION
+```javascript
+// Khi phát hiện conflict
+async function resolveConflict() {
+    // Get all chains from peers
+    const chains = await peerManager.getAllChains();
+    
+    // Validate each chain
+    const validChains = await Promise.all(
+        chains.map(chain => blockchain.validateChain(chain))
+    );
+    
+    // Select longest valid chain
+    const longestChain = selectLongestChain(validChains);
+    
+    // Replace local chain if needed
+    if (longestChain.length > blockchain.getCurrentChain().length) {
+        await blockchain.replaceChain(longestChain);
+    }
+}
+```
+
+7. BẢO MẬT VÀ QUYỀN HẠN
+----------------------
+
+7.1. SMART CONTRACT VALIDATION
+```javascript
+// Validate transaction based on role
+function validateTransaction(transaction, userRole) {
+    switch(transaction.type) {
+        case 'PRODUCTION':
+            return userRole === 'manufacturer';
+        case 'DISTRIBUTION':
+            return userRole === 'distributor';
+        case 'RETAIL':
+            return userRole === 'retailer';
+        default:
+            return false;
+    }
+}
+
+// Validate quantities
+function validateQuantities(transaction) {
+    // Check if quantities match previous records
+    // Check if sender has enough inventory
+    // Check if transfer amounts are valid
+}
+```
+
+7.2. ACCESS CONTROL
+```javascript
+// Middleware kiểm tra quyền
+async function checkPermission(req, res, next) {
+    const token = req.headers.authorization;
+    const user = await verifyToken(token);
+    
+    if (!user) {
+        return res.status(401).json({
+            error: 'Unauthorized'
+        });
+    }
+    
+    if (!hasPermission(user.role, req.path)) {
+        return res.status(403).json({
+            error: 'Permission denied'
+        });
+    }
+    
+    next();
+}
+```
+
+8. MONITORING VÀ LOGGING
+----------------------
+
+8.1. SYSTEM MONITORING
+```javascript
+// Monitor node health
+setInterval(async () => {
+    const stats = {
+        nodeId: config.nodeId,
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage(),
+        activeConnections: peerManager.getActiveConnections(),
+        blockHeight: blockchain.getCurrentHeight(),
+        lastBlockTime: blockchain.getLastBlockTime()
+    };
+    
+    await monitoring.saveStats(stats);
+}, 60000);
+```
+
+8.2. TRANSACTION LOGGING
+```javascript
+// Log mọi transaction
+async function logTransaction(transaction) {
+    const log = {
+        timestamp: new Date(),
+        transactionId: transaction.id,
+        type: transaction.type,
+        actor: transaction.actor,
+        details: transaction
+    };
+    
+    await logger.saveLog(log);
+}
+```
+
+9. BACKUP VÀ RESTORE
+------------------
+
+9.1. AUTOMATED BACKUP
+```javascript
+// Backup định kỳ
+schedule.every('1d').do(async () => {
+    const timestamp = new Date().toISOString();
+    const backupPath = `backups/${config.nodeId}_${timestamp}`;
+    
+    // Backup blockchain
+    await fs.copy(
+        `node-data/${config.nodeId}/blockchain.json`,
+        `${backupPath}/blockchain.json`
+    );
+    
+    // Backup state
+    await fs.copy(
+        `node-data/${config.nodeId}/state.json`,
+        `${backupPath}/state.json`
+    );
+});
+```
+
+9.2. RESTORE PROCEDURE
+```javascript
+async function restoreFromBackup(backupId) {
+    // Stop node
+    await stopNode();
+    
+    // Restore files
+    await fs.copy(
+        `backups/${backupId}/blockchain.json`,
+        `node-data/${config.nodeId}/blockchain.json`
+    );
+    
+    // Verify restored data
+    if (!await blockchain.verifyChain()) {
+        throw new Error('Restored chain is invalid');
+    }
+    
+    // Restart node
+    await startNode();
+    
+    // Sync with peers
+    await syncWithPeers();
+}
+```

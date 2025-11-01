@@ -4,6 +4,8 @@ const path = require('path');
 const SupplyChainContract = require('./SmartContract');
 const { v4: uuidv4 } = require('uuid'); // Thêm thư viện UUID
 
+const DEFAULT_DATA_FILE = path.join(__dirname, 'node-data', 'default.json');
+
 class Block {
     constructor(timestamp, data, previousHash = '') {
         this.index = 0; // Sẽ được set khi thêm vào chain
@@ -97,14 +99,36 @@ class Block {
     }
 }
 
+const instantiateBlock = (blockData) => {
+    const block = Object.create(Block.prototype);
+    block.index = blockData.index;
+    block.timestamp = blockData.timestamp;
+    block.data = blockData.data;
+    block.previousHash = blockData.previousHash;
+    block.nonce = blockData.nonce;
+    block.hash = blockData.hash;
+    return block;
+};
+
 class Blockchain {
-    constructor(difficulty = 4) {
+    constructor(config = {}) {
+        if (typeof config === 'number') {
+            config = { difficulty: config };
+        }
+
+        const {
+            difficulty = 4,
+            dataFile = DEFAULT_DATA_FILE,
+            initialChainData = null
+        } = config;
+
         this.difficulty = difficulty; // Độ khó mining (số chữ số 0 đầu tiên)
         this.chain = [];
         this.pendingTransactions = []; // Giao dịch chờ được mine
         this.miningReward = 100; // Phần thưởng cho miner (optional, có thể dùng sau)
-        this.dataFile = path.join(__dirname, 'blockchain_data.json');
-        
+        this.dataFile = path.resolve(dataFile);
+        this.initialChainData = initialChainData;
+
         // Khởi tạo Smart Contract
         this.smartContract = new SupplyChainContract();
         console.log('🤖 Smart Contract đã được khởi tạo');
@@ -114,8 +138,21 @@ class Blockchain {
         this.loadBlockchain();
     }
 
+    setDataFile(dataFile) {
+        this.dataFile = path.resolve(dataFile || DEFAULT_DATA_FILE);
+        this.ensureDataDirectory();
+    }
+
+    ensureDataDirectory() {
+        const dir = path.dirname(this.dataFile);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+    }
+
     // Load blockchain từ file hoặc tạo mới
     loadBlockchain() {
+        this.ensureDataDirectory();
         try {
             if (fs.existsSync(this.dataFile)) {
                 console.log('📂 Đang load blockchain từ file...');
@@ -123,30 +160,29 @@ class Blockchain {
                 
                 // Khôi phục chain từ file
                 // QUAN TRỌNG: Preserve exact data từ file để hash không thay đổi
-                this.chain = data.chain.map(blockData => {
-                    const block = Object.create(Block.prototype);
-                    block.index = blockData.index;
-                    block.timestamp = blockData.timestamp;
-                    block.data = blockData.data; // Giữ nguyên data từ file, KHÔNG gọi constructor
-                    block.previousHash = blockData.previousHash;
-                    block.nonce = blockData.nonce;
-                    block.hash = blockData.hash;
-                    return block;
-                });
+                this.chain = Array.isArray(data.chain) ? data.chain.map(instantiateBlock) : [];
                 
                 // Khôi phục pending transactions
                 this.pendingTransactions = data.pendingTransactions || [];
                 
                 console.log(`✅ Đã load blockchain với ${this.chain.length} blocks`);
-                
+
                 // Validate blockchain sau khi load
                 if (!this.isChainValid()) {
                     console.error('⚠️  CẢNH BÁO: Blockchain không hợp lệ sau khi load!');
                 }
             } else {
-                console.log('📝 Không tìm thấy blockchain, tạo mới...');
-                this.chain = [this.createGenesisBlock()];
-                this.saveBlockchain();
+                if (this.initialChainData && Array.isArray(this.initialChainData.chain)) {
+                    console.log('📦 Không tìm thấy file, import dữ liệu chuỗi ban đầu...');
+                    this.chain = this.initialChainData.chain.map(instantiateBlock);
+                    this.pendingTransactions = this.initialChainData.pendingTransactions || [];
+                    this.saveBlockchain();
+                    console.log(`✅ Đã import blockchain với ${this.chain.length} blocks`);
+                } else {
+                    console.log('📝 Không tìm thấy blockchain, tạo mới...');
+                    this.chain = [this.createGenesisBlock()];
+                    this.saveBlockchain();
+                }
             }
         } catch (error) {
             console.error('❌ Lỗi khi load blockchain:', error.message);
@@ -159,8 +195,9 @@ class Blockchain {
     // Lưu blockchain vào file
     saveBlockchain() {
         try {
+            this.ensureDataDirectory();
             const data = {
-                chain: this.chain,
+                chain: this.getChainSnapshot(),
                 pendingTransactions: this.pendingTransactions,
                 difficulty: this.difficulty,
                 lastUpdated: new Date().toISOString()
@@ -171,6 +208,21 @@ class Blockchain {
         } catch (error) {
             console.error('❌ Lỗi khi lưu blockchain:', error.message);
         }
+    }
+
+    getChainSnapshot() {
+        return this.chain.map(block => this.serializeBlock(block));
+    }
+
+    serializeBlock(block) {
+        return {
+            index: block.index,
+            timestamp: block.timestamp,
+            data: block.data,
+            previousHash: block.previousHash,
+            nonce: block.nonce,
+            hash: block.hash
+        };
     }
 
     createGenesisBlock() {
@@ -283,49 +335,119 @@ class Blockchain {
     }
 
     // Kiểm tra tính hợp lệ của blockchain
-    isChainValid() {
-        console.log('\n🔍 Đang kiểm tra tính hợp lệ của blockchain...');
-        
-        // Kiểm tra genesis block
-        const realGenesisHash = this.chain[0].calculateHash();
-        if (this.chain[0].hash !== realGenesisHash) {
-            console.error('❌ Genesis block không hợp lệ!');
+    isChainValid(chain = this.chain, { verbose = true } = {}) {
+        const logError = (...args) => {
+            if (verbose) console.error(...args);
+        };
+
+        if (!Array.isArray(chain) || chain.length === 0) {
+            logError('❌ Chuỗi blockchain rỗng hoặc không hợp lệ');
             return false;
         }
 
-        // Kiểm tra từng block
-        for (let i = 1; i < this.chain.length; i++) {
-            const currentBlock = this.chain[i];
-            const previousBlock = this.chain[i - 1];
+        const genesisBlock = instantiateBlock(chain[0]);
+        const realGenesisHash = genesisBlock.calculateHash();
+        if (genesisBlock.hash !== realGenesisHash) {
+            logError('❌ Genesis block không hợp lệ!');
+            return false;
+        }
 
-            // Kiểm tra hash của block hiện tại
+        const target = Array(this.difficulty + 1).join('0');
+
+        for (let i = 1; i < chain.length; i++) {
+            const currentBlock = instantiateBlock(chain[i]);
+            const previousBlock = instantiateBlock(chain[i - 1]);
+
             const calculatedHash = currentBlock.calculateHash();
             if (currentBlock.hash !== calculatedHash) {
-                console.error(`❌ Block #${i} có hash không hợp lệ!`);
-                console.error(`   Hash hiện tại: ${currentBlock.hash}`);
-                console.error(`   Hash tính toán: ${calculatedHash}`);
+                logError(`❌ Block #${currentBlock.index} có hash không hợp lệ!`);
+                logError(`   Hash hiện tại: ${currentBlock.hash}`);
+                logError(`   Hash tính toán: ${calculatedHash}`);
                 return false;
             }
 
-            // Kiểm tra liên kết với block trước
             if (currentBlock.previousHash !== previousBlock.hash) {
-                console.error(`❌ Block #${i} không liên kết đúng với block trước!`);
-                console.error(`   Previous hash trong block: ${currentBlock.previousHash}`);
-                console.error(`   Hash của block trước: ${previousBlock.hash}`);
+                logError(`❌ Block #${currentBlock.index} không liên kết đúng với block trước!`);
+                logError(`   Previous hash trong block: ${currentBlock.previousHash}`);
+                logError(`   Hash của block trước: ${previousBlock.hash}`);
                 return false;
             }
 
-            // Kiểm tra proof of work (hash phải bắt đầu bằng số 0 theo difficulty)
-            const target = Array(this.difficulty + 1).join("0");
             if (currentBlock.hash.substring(0, this.difficulty) !== target) {
-                console.error(`❌ Block #${i} không đáp ứng difficulty ${this.difficulty}!`);
-                console.error(`   Hash: ${currentBlock.hash}`);
+                logError(`❌ Block #${currentBlock.index} không đáp ứng difficulty ${this.difficulty}!`);
+                logError(`   Hash: ${currentBlock.hash}`);
                 return false;
             }
         }
 
-        console.log('✅ Blockchain hợp lệ!');
+        if (verbose) console.log('✅ Blockchain hợp lệ!');
         return true;
+    }
+
+    replaceChain(newChain) {
+        if (!Array.isArray(newChain)) {
+            return { success: false, reason: 'INVALID_FORMAT' };
+        }
+
+        if (newChain.length <= this.chain.length) {
+            return { success: false, reason: 'CHAIN_NOT_LONGER' };
+        }
+
+        if (!this.isChainValid(newChain, { verbose: false })) {
+            return { success: false, reason: 'CHAIN_INVALID' };
+        }
+
+        this.chain = newChain.map(instantiateBlock);
+        this.pendingTransactions = [];
+        this.saveBlockchain();
+        console.log('🔄 Đã thay thế blockchain bằng chuỗi hợp lệ dài hơn từ peer');
+        return { success: true };
+    }
+
+    addBlockFromNetwork(blockData) {
+        try {
+            if (!blockData) {
+                return { success: false, reason: 'EMPTY_BLOCK' };
+            }
+
+            const incomingBlock = instantiateBlock(blockData);
+            const latestBlock = this.getLatestBlock();
+
+            if (incomingBlock.index <= latestBlock.index) {
+                console.log(`ℹ️ Block #${incomingBlock.index} đã tồn tại hoặc cũ hơn. Bỏ qua.`);
+                return { success: false, reason: 'BLOCK_ALREADY_EXISTS' };
+            }
+
+            if (incomingBlock.index !== latestBlock.index + 1) {
+                console.warn(`⚠️ Nhận block #${incomingBlock.index} nhưng block hiện tại là #${latestBlock.index}. Có thể thiếu block.`);
+                return { success: false, reason: 'OUT_OF_SYNC', expectedIndex: latestBlock.index + 1 };
+            }
+
+            if (incomingBlock.previousHash !== latestBlock.hash) {
+                console.warn('⚠️ previousHash không khớp khi nhận block từ peer');
+                return { success: false, reason: 'PREVIOUS_HASH_MISMATCH' };
+            }
+
+            const calculatedHash = incomingBlock.calculateHash();
+            if (incomingBlock.hash !== calculatedHash) {
+                console.warn('⚠️ Hash không hợp lệ cho block nhận từ peer');
+                return { success: false, reason: 'HASH_MISMATCH' };
+            }
+
+            const target = Array(this.difficulty + 1).join('0');
+            if (incomingBlock.hash.substring(0, this.difficulty) !== target) {
+                console.warn('⚠️ Block nhận từ peer không đáp ứng difficulty');
+                return { success: false, reason: 'INVALID_DIFFICULTY' };
+            }
+
+            this.chain.push(incomingBlock);
+            this.saveBlockchain();
+            console.log(`✅ Đã nhận và thêm block #${incomingBlock.index} từ peer`);
+            return { success: true, block: incomingBlock };
+        } catch (error) {
+            console.error('❌ Lỗi khi thêm block từ peer:', error);
+            return { success: false, reason: error.message };
+        }
     }
 
     getProduct(batchNumber) {
@@ -389,7 +511,7 @@ class Blockchain {
             totalBlocks: this.chain.length,
             difficulty: this.difficulty,
             pendingTransactions: this.pendingTransactions.length,
-            isValid: this.isChainValid(),
+            isValid: this.isChainValid(this.chain, { verbose: false }),
             latestBlock: {
                 index: this.getLatestBlock().index,
                 hash: this.getLatestBlock().hash,

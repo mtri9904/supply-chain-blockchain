@@ -1,0 +1,86 @@
+============================
+ĐỊNH HƯỚNG CHUYỂN ĐỔI BLOCKCHAIN SANG KIẾN TRÚC NHIỀU NODE (P2P)
+============================
+
+Tổng quan hiện trạng
+--------------------
+- Ứng dụng đang chạy 1 server Express duy nhất (`backend/server.js`).
+- Chuỗi blockchain được lưu trong một file duy nhất `backend/blockchain_data.json`.
+- Toàn bộ nghiệp vụ (API, mining, Smart Contract, WebSocket) chia sẻ cùng một tiến trình Node.js.
+
+Mục tiêu sau chuyển đổi
+-----------------------
+1. Mỗi node là một tiến trình server độc lập (Express + WebSocket) với file dữ liệu riêng (vd. `node-data/node1.json`).
+2. Các node giao tiếp qua HTTP hoặc WebSocket để broadcast block mới và đồng bộ.
+3. Khi node A mine block mới, node A phát (broadcast) block tới các node còn lại.
+4. Node nhận sẽ xác minh hash, previousHash, difficulty => nếu hợp lệ thì thêm block vào chain của mình.
+5. Cấu trúc mã nguồn, hướng dẫn khởi chạy nhiều node, và quy trình kiểm tra đồng bộ phải được tài liệu hóa rõ ràng.
+
+Các thay đổi chính dự kiến
+--------------------------
+A. Tổ chức lại cấu trúc thư mục
+   - `backend/network/PeerManager.js`: quản lý danh sách peer, kết nối, gửi/nhận block.
+   - `backend/network/messages.js`: chuẩn hóa payload (BLOCK_BROADCAST, CHAIN_REQUEST, ...).
+   - `backend/config/node-config.json`: cấu hình mặc định cho node (port, peers, đường dẫn file dữ liệu).
+   - `backend/scripts/launch-node.js`: tiện ích khởi động nhanh node với tham số `--port`, `--dataFile`, `--peers`.
+   - Mỗi node dùng file dữ liệu riêng trong `backend/node-data/`.
+
+B. Thay đổi lớp Blockchain (`backend/MyBlockchain.js`)
+   1. Truyền `dataFile` động khi khởi tạo `new Blockchain({ dataFile, difficulty })`.
+   2. Tách phần đọc/ghi file sang phương thức `loadFromFile(path)` và `saveToFile(path)` hỗ trợ nhiều file.
+   3. Thêm phương thức `replaceChain(newChain)` (chỉ thay nếu chain mới dài hơn và hợp lệ).
+   4. Thêm `addBlockFromNetwork(block)` dùng khi nhận block từ peer (skip mining, chỉ xác minh + thêm).
+
+C. Thay đổi server backend
+   1. Cho phép cấu hình qua biến môi trường/CLI: `PORT`, `DATA_FILE`, `PEERS`.
+   2. Đưa logic khởi tạo blockchain vào `initBlockchain({ dataFile })`.
+   3. Tách các route thành module nhỏ (REST API, admin API, P2P API) để chia sẻ giữa các node.
+   4. Khi mine block mới:
+      - Lưu vào blockchain hiện tại.
+      - Gửi thông báo qua `PeerManager.broadcastBlock(newBlock)`.
+   5. Thêm endpoint `/p2p/block` (POST): nhận block mới từ peer và xác minh.
+   6. Thêm endpoint `/p2p/peers` (GET/POST): trao đổi danh sách peer.
+   7. Bổ sung REST `/p2p/request-chain` (optional) để đồng bộ khi node mới khởi động.
+
+D. Module PeerManager (HTTP/WebSocket)
+   - Lưu danh sách peer (URL + trạng thái).
+   - Cung cấp API: `connectToPeers()`, `broadcastBlock(block)`, `requestChain(peer)`.
+   - Xử lý retry, log lỗi nếu peer không phản hồi.
+   - Với WebSocket: mở server Socket.IO, subscribe sự kiện `block:new`, `chain:request`, ...
+
+E. Khởi chạy nhiều node
+   - Tạo script `npm run start-node -- --port=5001 --dataFile=node-data/node1.json --peers=http://localhost:5002`.
+   - Với nhiều node, chạy cùng lúc trên các port khác nhau, chỉ định peers chéo.
+   - Có thể dùng file `.env.node1`, `.env.node2` hoặc cấu hình CLI.
+
+F. Quy trình đồng bộ
+   1. Khi node khởi động => gọi `peerManager.connectToPeers()` để đăng ký với các peer đã biết.
+   2. Node yêu cầu chain (`GET /p2p/chain`) nếu chain của mình rỗng hoặc ngắn hơn.
+   3. Khi nhận block mới:
+      - Validate: previousHash khớp, hash hợp lệ (difficulty), chữ ký Smart Contract (nếu có).
+      - Nếu hợp lệ: `addBlockFromNetwork(block)` + lưu file.
+      - Nếu block hợp lệ nhưng previousHash không khớp do chain thiếu, yêu cầu full chain.
+
+G. Hướng dẫn kiểm thử đồng bộ (dự kiến ghi trong README)
+   1. Khởi chạy node 1 `npm run start-node -- --port=5001 --dataFile=node-data/node1.json`.
+   2. Khởi chạy node 2 `npm run start-node -- --port=5002 --dataFile=node-data/node2.json --peers=http://localhost:5001`.
+   3. Trên node 1, gửi API `POST /api/record` để tạo block mới.
+   4. Quan sát log node 1: "Broadcast block" và node 2: "Received block".
+   5. Kiểm tra file `node2.json` đã có block mới và endpoint `/api/blockchain/stats` của node 2 cho cùng dữ liệu.
+   6. Tắt node 2, tạo thêm block trên node 1, bật lại node 2 => node 2 nên yêu cầu chain và đồng bộ.
+
+Tài liệu hóa bổ sung
+-------------------
+- Cập nhật README: kiến trúc đa node, cấu hình, câu lệnh khởi chạy, ví dụ JSON.
+- Nếu có dashboard, cung cấp cách switch API_URL sang từng node.
+- Cân nhắc tạo Postman collection/script tự động test broadcast.
+
+Phần việc tiếp theo
+-------------------
+1. Cập nhật `MyBlockchain.js` cho phép load/save theo file động và thêm hàm `replaceChain`, `addBlockFromNetwork`.
+2. Tách cấu hình node + xây dựng `PeerManager` (HTTP/WebSocket).
+3. Chỉnh `server.js` để đọc cấu hình node, tích hợp `PeerManager`, thêm các route P2P.
+4. Viết script khởi chạy node và cập nhật README + mẫu `.env`.
+5. Thực hiện QA: mining, broadcast đồng bộ, xử lý trường hợp lỗi hash/previousHash.
+
+

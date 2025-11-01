@@ -16,6 +16,13 @@ CREATE TABLE users (
 );
 GO
 
+
+-- Thêm 2 cột mới vào bảng users
+ALTER TABLE users
+ADD publicKey NVARCHAR(MAX) NULL,
+    encryptedPrivateKey NVARCHAR(MAX) NULL;
+GO
+
 -- Xem cấu trúc bảng
 SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'users';
 
