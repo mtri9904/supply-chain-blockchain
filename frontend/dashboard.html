@@ -318,6 +318,23 @@
             return roles[role] || role;
         }
 
+        async function ensureApiUrl() {
+            if (window.API_URL) {
+                return window.API_URL;
+            }
+
+            await new Promise(resolve => {
+                const checkInterval = setInterval(() => {
+                    if (window.API_URL) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+            });
+
+            return window.API_URL;
+        }
+
         function createFormForRole(role) {
             const section = document.getElementById('inputSection');
             let formContent = '';
@@ -652,17 +669,7 @@
             historyContent.innerHTML = '<div class="loading">⏳ Đang tải lịch sử...</div>';
 
             try {
-                // Wait for API_URL to be available
-                if (!window.API_URL) {
-                    await new Promise(resolve => {
-                        const checkInterval = setInterval(() => {
-                            if (window.API_URL) {
-                                clearInterval(checkInterval);
-                                resolve();
-                            }
-                        }, 100);
-                    });
-                }
+                await ensureApiUrl();
 
                 console.log('Loading history with API URL:', window.API_URL);
                 const response = await fetch(`${window.API_URL}/api/user-history/${currentUser.username}`, {
@@ -802,6 +809,8 @@
         // Hiển thị thống kê blockchain
         async function showBlockchainStats() {
             try {
+                await ensureApiUrl();
+
                 const response = await fetch(`${window.API_URL}/api/blockchain/stats`);
                 const result = await response.json();
 
@@ -839,6 +848,8 @@
         // Validate blockchain
         async function validateBlockchain(event) {
             try {
+                await ensureApiUrl();
+
                 const confirmValidate = confirm('🔍 Xác thực blockchain sẽ kiểm tra:\n' +
                                                '• Tính toàn vẹn của mỗi block\n' +
                                                '• Liên kết giữa các block\n' +
@@ -858,6 +869,7 @@
                 
                 const response = await fetch(`${window.API_URL}/api/blockchain/validate`);
                 const result = await response.json();
+                const stats = result.stats || {};
                 
                 // Restore button
                 if (button) {
@@ -871,16 +883,16 @@
                     
                     // ========== THÊM THÔNG TIN CHỮ KÝ SỐ ==========
                     let signatureInfo = '';
-                    if (result.stats.verifiedSignatures !== undefined) {
+                    if (typeof stats.verifiedSignatures === 'number') {
                         signatureInfo = `\n\n🔐 KIỂM TRA CHỮ KÝ SỐ:\n` +
-                                      `✅ Chữ ký hợp lệ: ${result.stats.verifiedSignatures}\n` +
-                                      `❌ Chữ ký không hợp lệ: ${result.stats.invalidSignatures}`;
-                        
-                        if (result.stats.signatureWarnings && result.stats.signatureWarnings.length > 0) {
-                            signatureInfo += `\n\n⚠️ CẢNH BÁO:\n` + 
-                                           result.stats.signatureWarnings.slice(0, 3).join('\n');
-                            if (result.stats.signatureWarnings.length > 3) {
-                                signatureInfo += `\n... và ${result.stats.signatureWarnings.length - 3} cảnh báo khác`;
+                                      `✅ Chữ ký hợp lệ: ${stats.verifiedSignatures}\n` +
+                                      `❌ Chữ ký không hợp lệ: ${stats.invalidSignatures ?? 'Không rõ'}`;
+
+                        if (Array.isArray(stats.signatureWarnings) && stats.signatureWarnings.length > 0) {
+                            const warningLines = stats.signatureWarnings.slice(0, 3).map(w => `• ${w}`);
+                            signatureInfo += `\n\n⚠️ CẢNH BÁO:\n` + warningLines.join('\n');
+                            if (stats.signatureWarnings.length > 3) {
+                                signatureInfo += `\n... và ${stats.signatureWarnings.length - 3} cảnh báo khác`;
                             }
                         }
                     }
@@ -888,9 +900,9 @@
                     alert(`${icon} KẾT QUẢ XÁC THỰC\n\n` +
                           `${message}\n\n` +
                           `📊 THỐNG KÊ:\n` +
-                          `Tổng số block: ${result.stats.totalBlocks}\n` +
-                          `Độ khó: ${result.stats.difficulty}\n` +
-                          `Latest Hash: ${result.stats.latestBlockHash.substring(0, 20)}...` +
+                          `Tổng số block: ${stats.totalBlocks ?? 'Không rõ'}\n` +
+                          `Độ khó: ${stats.difficulty ?? 'Không rõ'}\n` +
+                          (stats.latestBlockHash ? `Latest Hash: ${stats.latestBlockHash.substring(0, 20)}...` : 'Latest Hash: Không rõ') +
                           signatureInfo);
                 } else {
                     throw new Error(result.message);

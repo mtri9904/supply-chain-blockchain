@@ -394,6 +394,7 @@ app.post('/api/record', authenticateToken, async (req, res) => {
         let actualData = req.body;
         let signature = null;
         let senderPublicKey = null;
+        let signaturePayload = null;
         
         // Check if payload contains signature (new format with digital signature)
         if (req.body.data && req.body.signature && req.body.publicKey) {
@@ -408,7 +409,8 @@ app.post('/api/record', authenticateToken, async (req, res) => {
                 const key = new NodeRSA();
                 key.importKey(senderPublicKey, 'public');
                 
-                const dataString = JSON.stringify(actualData, Object.keys(actualData).sort());
+                const sortedKeys = Object.keys(actualData).sort();
+                const dataString = JSON.stringify(actualData, sortedKeys);
                 const isValid = key.verify(
                     Buffer.from(dataString, 'utf8'),
                     Buffer.from(signature, 'hex'),
@@ -426,6 +428,7 @@ app.post('/api/record', authenticateToken, async (req, res) => {
                 }
                 
                 console.log('✅ Chữ ký hợp lệ! Giao dịch được chấp nhận.');
+                signaturePayload = dataString;
                 
                 // (Tùy chọn) Verify xem publicKey có khớp với user trong DB không
                 try {
@@ -645,6 +648,9 @@ app.post('/api/record', authenticateToken, async (req, res) => {
         if (signature && senderPublicKey) {
             dataForBlock.signature = signature;
             dataForBlock.publicKey = senderPublicKey;
+            if (signaturePayload) {
+                dataForBlock.signaturePayload = signaturePayload;
+            }
             console.log('🔐 Đã thêm chữ ký số vào block data');
         }
         
@@ -836,29 +842,69 @@ app.get('/api/blockchain/validate', (req, res) => {
         let verifiedSignatures = 0;
         let invalidSignatures = 0;
         
+        const toCanonicalJSON = (obj) => {
+            const keys = Object.keys(obj).sort();
+            return JSON.stringify(obj, keys);
+        };
+
         for (let i = 1; i < supplyChain.chain.length; i++) {
             const block = supplyChain.chain[i];
-            
+
             if (block.data && block.data.signature && block.data.publicKey) {
                 try {
                     const NodeRSA = require('node-rsa');
                     const key = new NodeRSA();
                     key.importKey(block.data.publicKey, 'public');
-                    
-                    // Tạo lại data để verify (loại bỏ signature và publicKey)
-                    const dataToVerify = {...block.data};
-                    delete dataToVerify.signature;
-                    delete dataToVerify.publicKey;
-                    
-                    const dataString = JSON.stringify(dataToVerify);
-                    const isSignatureValid = key.verify(
-                        Buffer.from(dataString, 'utf8'),
-                        Buffer.from(block.data.signature, 'hex'),
-                        'utf8',
-                        'hex'
-                    );
-                    
-                    if (isSignatureValid) {
+
+                    const candidatePayloads = [];
+                    const dedupe = new Set();
+
+                    if (block.data.signaturePayload) {
+                        candidatePayloads.push(block.data.signaturePayload);
+                    }
+
+                    const sanitizedBase = { ...block.data };
+                    ['signature', 'publicKey', 'qrCode', 'signaturePayload', 'smartContractValidation'].forEach(field => delete sanitizedBase[field]);
+                    ['uniqueId', 'gtin', 'timestamp'].forEach(field => delete sanitizedBase[field]);
+
+                    const pushPayload = (source, fieldsToStrip = []) => {
+                        const clone = { ...source };
+                        fieldsToStrip.forEach(field => delete clone[field]);
+                        if (Object.keys(clone).length === 0) return;
+                        const payload = toCanonicalJSON(clone);
+                        if (!dedupe.has(payload)) {
+                            dedupe.add(payload);
+                            candidatePayloads.push(payload);
+                        }
+                    };
+
+                    pushPayload(sanitizedBase);
+
+                    const optionalFields = ['status', 'batchNumber', 'productName']
+                        .filter(field => field in sanitizedBase);
+
+                    const combinations = 1 << optionalFields.length;
+                    for (let mask = 1; mask < combinations; mask++) {
+                        const fields = optionalFields.filter((_, index) => (mask & (1 << index)) !== 0);
+                        if (fields.length > 0) {
+                            pushPayload(sanitizedBase, fields);
+                        }
+                    }
+
+                    const allValid = candidatePayloads.some(payload => {
+                        try {
+                            return key.verify(
+                                Buffer.from(payload, 'utf8'),
+                                Buffer.from(block.data.signature, 'hex'),
+                                'utf8',
+                                'hex'
+                            );
+                        } catch (verifyErr) {
+                            return false;
+                        }
+                    });
+
+                    if (allValid) {
                         verifiedSignatures++;
                     } else {
                         invalidSignatures++;
