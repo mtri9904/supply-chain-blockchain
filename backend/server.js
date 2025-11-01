@@ -6,7 +6,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const QRCode = require('qrcode');
-const { Blockchain } = require('./MyBlockchain');
+const blockchain = require('./MyBlockchain');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 // Tự động phát hiện IP mạng WiFi
@@ -34,16 +37,21 @@ console.log(`🌐 Phát hiện IP WiFi: ${wifiIP}`);
 // Cấu hình CORS chi tiết (cho phép cả localhost và IP)
 const corsOptions = {
     origin: [
+        'http://localhost:5173',  // ⭐ THÊM PORT NÀY - Frontend đang chạy trên 5173
+        'http://127.0.0.1:5173',  // ⭐ THÊM PORT NÀY
         'http://localhost:5500', 
         'http://127.0.0.1:5500', 
         'http://localhost:3000',
+        `http://${wifiIP}:5173`,
         `http://${wifiIP}:5500`,  // IP WiFi tự động phát hiện (frontend)
         `http://${wifiIP}:5000`,  // IP WiFi tự động phát hiện (backend)
         `http://${wifiIP}:5500/supply-chain-blockchain/frontend`,  // Full path frontend
+        'http://172.16.16.65:5173',
         'http://172.16.16.65:5500',  // IP cũ (backup)
         'http://172.16.16.65:5000',  // IP cũ backend (backup)
         'http://172.16.16.65:5500/supply-chain-blockchain/frontend',  // Full path cũ
         // Thêm các IP động từ biến môi trường
+        process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:5173` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.SERVER_PORT || '5500'}` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.BACKEND_PORT || '5000'}` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.SERVER_PORT || '5500'}/supply-chain-blockchain/frontend` : null
@@ -53,25 +61,220 @@ const corsOptions = {
     credentials: true
 };
 
-// Hàm để log chi tiết request
-const logRequest = (req) => {
-    console.log(`
-🔍 Request Details:
-- URL: ${req.method} ${req.url}
-- Headers: ${JSON.stringify(req.headers)}
-- Body: ${JSON.stringify(req.body)}
-- Query: ${JSON.stringify(req.query)}
-- Params: ${JSON.stringify(req.params)}
-`);
-};
+// Cấu hình multer để lưu ảnh
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadDir = path.join(__dirname, 'uploads');
+        // Tạo thư mục nếu chưa tồn tại
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        // Tạo tên file unique: timestamp + random + extension
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, 'image-' + uniqueSuffix + ext);
+    }
+});
 
+const upload = multer({ 
+    storage: storage,
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    },
+    fileFilter: function (req, file, cb) {
+        // Chỉ chấp nhận file ảnh
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Chỉ chấp nhận file ảnh!'), false);
+        }
+    }
+});
+
+// Tạo thư mục uploads nếu chưa tồn tại
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Middleware
 const app = express();
-const httpServer = http.createServer(app);
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' }));
 
+// Route gốc
+app.get('/', (req, res) => {
+  res.json({ message: 'Supply Chain Blockchain API' });
+});
+
+// Thêm route test - ĐẶT TRƯỚC app.use('/api', recordEventRoutes);
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK',
+    message: 'Backend server is running!',
+    timestamp: new Date().toISOString(),
+    port: 5000
+  });
+});
+// THÊM VÀO server.js
+app.get('/api/stats', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Server is running',
+        timestamp: new Date().toISOString(),
+        version: '1.0.0'
+    });
+});
+// Thêm vào server.js
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    status: 'success', 
+    message: 'Test API is working!',
+    timestamp: new Date().toISOString()
+  });
+});
+// 🧩 API TEST: Ghi sự kiện vào blockchain trực tiếp
+app.post('/api/record-event', (req, res) => {
+  try {
+    const eventData = req.body;
+
+    if (!eventData.productId || !eventData.eventType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu thông tin productId hoặc eventType'
+      });
+    }
+
+    // 🔍 Log dữ liệu nhận được
+    console.log('📝 Event data to add to blockchain (FULL):', {
+      productId: eventData.productId,
+      eventType: eventData.eventType,
+      imageUrl: eventData.imageUrl,
+      allData: eventData
+    });
+
+    // ⚙️ Ghi vào blockchain
+    const result = blockchain.addTransactionEvent(eventData);
+
+    // 🔗 Log kết quả
+    console.log('🔗 Blockchain result:', {
+      success: result.success,
+      eventData: result.eventData,
+      imageUrlInBlockchain: result.eventData?.imageUrl
+    });
+
+    res.json({
+      success: true,
+      message: 'Đã ghi sự kiện vào blockchain thành công',
+      data: result
+    });
+
+  } catch (error) {
+    console.error('❌ Lỗi khi ghi sự kiện vào blockchain:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Lỗi máy chủ khi ghi sự kiện vào blockchain',
+      error: error.message
+    });
+  }
+});
+
+// 📌 TEST ENDPOINT UPLOAD
+app.get('/api/test-upload', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Upload endpoint is ready',
+        uploadsDir: uploadsDir,
+        uploadsExists: fs.existsSync(uploadsDir)
+    });
+});
+
+// API upload ảnh - ĐÃ CÓ NHƯNG CẦN ĐẢM BẢO HOẠT ĐỘNG
+app.post('/api/upload-image', upload.single('image'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'Không có file ảnh được upload'
+            });
+        }
+
+        console.log('📸 Ảnh đã được upload:', {
+            filename: req.file.filename,
+            originalname: req.file.originalname,
+            size: req.file.size,
+            mimetype: req.file.mimetype
+        });
+
+        // Tạo URL để truy cập ảnh
+        const imageUrl = `/uploads/${req.file.filename}`;
+        
+        res.json({
+            success: true,
+            message: 'Upload ảnh thành công!',
+            imageUrl: imageUrl,
+            filename: req.file.filename,
+            originalName: req.file.originalname
+        });
+
+    } catch (error) {
+        console.error('❌ Lỗi upload ảnh:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Lỗi upload ảnh',
+            error: error.message
+        });
+    }
+});
+// 📌 ROUTE PHỤC VỤ FILE ẢNH TĨNH
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// THÊM: Xử lý lỗi Multer cụ thể
+app.use((error, req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                message: 'File quá lớn',
+                details: 'Kích thước file tối đa là 5MB'
+            });
+        }
+        if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+            return res.status(400).json({
+                success: false,
+                message: 'Field không đúng',
+                details: 'Field name phải là "image"'
+            });
+        }
+    }
+    next(error);
+});
+// // Hàm để log chi tiết request
+// const logRequest = (req) => {
+//     console.log(`
+// 🔍 Request Details:
+// - URL: ${req.method} ${req.url}
+// - Headers: ${JSON.stringify(req.headers)}
+// - Body: ${JSON.stringify(req.body)}
+// - Query: ${JSON.stringify(req.query)}
+// - Params: ${JSON.stringify(req.params)}
+// `);
+// };
+
+
+
+const httpServer = http.createServer(app);
+// Import routes
+const recordEventRoutes = require('./routes/recordEvent');
+// Use routes
+app.use('/api', recordEventRoutes);
 // Thiết lập Socket.IO với CORS
 const io = new Server(httpServer, {
     cors: corsOptions
 });
+
 
 // Biến global để truy cập io từ các routes
 global.io = io;
@@ -104,19 +307,16 @@ app.use((req, res, next) => {
     next();
 });
 
-app.use(cors(corsOptions));
 
 // Custom response handler
-app.use((req, res, next) => {
-    const originalJson = res.json;
-    res.json = function(data) {
-        console.log(`\n📤 Response for ${req.method} ${req.url}:`, data);
-        return originalJson.call(this, data);
-    };
-    next();
-});
-
-app.use(express.json());
+// app.use((req, res, next) => {
+//     const originalJson = res.json;
+//     res.json = function(data) {
+//         console.log(`\n📤 Response for ${req.method} ${req.url}:`, data);
+//         return originalJson.call(this, data);
+//     };
+//     next();
+// });
 
 // Middleware xử lý lỗi JSON parsing
 app.use((err, req, res, next) => {
@@ -131,7 +331,7 @@ app.use((err, req, res, next) => {
 
 // Khởi tạo blockchain với difficulty = 4 (4 chữ số 0 đầu tiên)
 // Có thể thay đổi difficulty: 2 = dễ (vài giây), 4 = trung bình (10-30s), 5 = khó (1-2 phút)
-const supplyChain = new Blockchain(4);
+const supplyChain = blockchain;
 console.log('✅ Blockchain đã khởi tạo với Proof of Work (difficulty = 4)');
 
 // Cấu hình SQL Server
@@ -766,308 +966,560 @@ app.post('/api/blockchain/reset', authenticateToken, (req, res) => {
     }
 });
 
-// API serve trang tra cứu sản phẩm (thay thế cho frontend)
+// Route hiển thị giao diện chi tiết sản phẩm
 app.get('/product/:productId', async (req, res) => {
     try {
         const { productId } = req.params;
         
-        if (!productId) {
-            return res.status(400).send(`
+        console.log(`📱 Hiển thị giao diện cho sản phẩm: ${productId}`);
+        
+        const history = supplyChain.getProduct(productId);
+        
+        if (!history || history.length === 0) {
+            return res.status(404).send(`
                 <!DOCTYPE html>
-                <html lang="vi">
+                <html>
                 <head>
-                    <meta charset="UTF-8">
+                    <title>Không tìm thấy sản phẩm</title>
                     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Lỗi - Supply Chain Blockchain</title>
                     <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                        .error { background: #ffebee; color: #c62828; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 500px; }
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        body { 
+                            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            min-height: 100vh;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            padding: 20px;
+                        }
+                        .error { 
+                            background: white;
+                            padding: 40px;
+                            border-radius: 15px;
+                            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                            text-align: center;
+                            max-width: 500px;
+                            width: 100%;
+                        }
+                        .error h1 { 
+                            color: #d32f2f; 
+                            margin-bottom: 15px;
+                            font-size: 24px;
+                        }
+                        .error p { 
+                            color: #666;
+                            line-height: 1.5;
+                        }
                     </style>
                 </head>
                 <body>
                     <div class="error">
-                        <h1>❌ Lỗi</h1>
-                        <p>Mã sản phẩm không hợp lệ</p>
+                        <h1>❌ Không tìm thấy sản phẩm</h1>
+                        <p>Mã sản phẩm "<strong>${productId}</strong>" không tồn tại trong hệ thống blockchain.</p>
                     </div>
                 </body>
                 </html>
             `);
         }
 
-        // Lấy lịch sử sản phẩm
-        const history = supplyChain.getProduct(productId);
-        if (!history || history.length === 0) {
-            return res.status(404).send(`
-                <!DOCTYPE html>
-                <html lang="vi">
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Sản phẩm không tồn tại - Supply Chain Blockchain</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                        .not-found { background: #fff3e0; color: #ef6c00; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 500px; }
-                        .qr-code { margin: 20px 0; }
-                        .qr-code img { max-width: 200px; height: auto; }
-                    </style>
-                </head>
-                <body>
-                    <div class="not-found">
-                        <h1>🔍 Sản phẩm không tồn tại</h1>
-                        <p>Mã sản phẩm: <strong>${productId}</strong></p>
-                        <p>Không tìm thấy thông tin trong blockchain</p>
-                    </div>
-                </body>
-                </html>
-            `);
-        }
-
-        // Tạo trang tra cứu sản phẩm
-        const productInfo = history[0]; // Lấy thông tin đầu tiên
-        const lastUpdate = history[history.length - 1]; // Lấy thông tin mới nhất
+        // Sắp xếp events theo thời gian (mới nhất đầu tiên)
+        const sortedEvents = history.sort((a, b) => b.blockIndex - a.blockIndex);
         
+        let eventsHTML = '';
+        sortedEvents.forEach(event => {
+            const timestamp = new Date(event.timestamp).toLocaleString('vi-VN');
+            console.log('🔍 Event data:', {
+                blockIndex: event.blockIndex,
+                eventType: event.eventType,
+                hasImageUrl: !!event.imageUrl,
+                imageUrl: event.imageUrl,
+                allKeys: Object.keys(event)
+            });
+            // Tạo HTML cho từng trường thông tin
+            let detailsHTML = '';
+            
+            // Thông tin cơ bản
+            const basicFields = [
+                { label: 'Địa điểm', value: event.location },
+                { label: 'Người thực hiện', value: event.actor },
+                { label: 'Vai trò', value: event.role },
+                { label: 'Loại sự kiện', value: event.eventType }
+            ];
+            
+            basicFields.forEach(field => {
+                if (field.value) {
+                    detailsHTML += `<p><strong>${field.label}:</strong> ${field.value}</p>`;
+                }
+            });
+            
+            // Thông tin chi tiết
+            const detailFields = [
+                { label: 'Số lượng', value: event.quantity, unit: 'kg' },
+                { label: 'Chất lượng', value: event.quality },
+                { label: 'Nhiệt độ', value: event.temperature, unit: '°C' },
+                { label: 'Thời gian', value: event.duration, unit: 'phút' },
+                { label: 'Giá', value: event.price, unit: 'VNĐ' },
+                { label: 'Loại khách hàng', value: event.customerType },
+                { label: 'Số lô', value: event.batchNumber },
+                { label: 'Điểm đi', value: event.fromLocation },
+                { label: 'Điểm đến', value: event.toLocation },
+                { label: 'Loại giống', value: event.seedType },
+                { label: 'Diện tích', value: event.area, unit: 'm²' },
+                { label: 'Năng suất', value: event.yield, unit: 'kg/m²' },
+                { label: 'Nguồn nước', value: event.waterSource },
+                { label: 'Loại phân bón', value: event.fertilizerType }
+            ];
+            
+            detailFields.forEach(field => {
+                if (field.value) {
+                    const unit = field.unit ? ` ${field.unit}` : '';
+                    detailsHTML += `<p><strong>${field.label}:</strong> ${field.value}${unit}</p>`;
+                }
+            });
+            
+            // Ghi chú
+            if (event.notes) {
+                detailsHTML += `<p><strong>Ghi chú:</strong> ${event.notes}</p>`;
+            }
+            if (event.imageUrl && event.imageUrl !== 'null' && event.imageUrl !== 'undefined') {
+                const safeImageUrl = event.imageUrl.replace(/'/g, "\\'");
+                
+                detailsHTML += `
+                    <div style="margin-top: 15px; text-align: center;">
+                        <button class="image-button" 
+                                onclick="showImagePopup('${safeImageUrl}')"
+                                style="background: #1a237e; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 14px; margin-top: 10px;">
+                            🖼️ Xem Hình Ảnh
+                        </button>
+                    </div>
+                `;
+            }
+            
+            eventsHTML += `
+                <div class="event-item">
+                    <div class="event-header">
+                        <span class="block-number">Block #${event.blockIndex}</span>
+                        <span class="timestamp">${timestamp}</span>
+                    </div>
+                    <div class="event-details">
+                        ${detailsHTML || '<p><em>Không có thông tin chi tiết</em></p>'}                   
+                    </div>
+                </div>
+            `;
+        });
+
         const html = `
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tra cứu sản phẩm ${productId} - Supply Chain Blockchain</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-        .header {
-            background: linear-gradient(135deg, #1a237e 0%, #3949ab 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-        .header .product-id {
-            font-size: 1.2em;
-            opacity: 0.9;
-            background: rgba(255,255,255,0.2);
-            padding: 8px 16px;
-            border-radius: 20px;
-            display: inline-block;
-        }
-        .content {
-            padding: 30px;
-        }
-        .info-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-left: 4px solid #1a237e;
-        }
-        .info-card h3 {
-            color: #1a237e;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            padding: 8px 0;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        .info-row:last-child {
-            border-bottom: none;
-        }
-        .info-label {
-            font-weight: 600;
-            color: #555;
-        }
-        .info-value {
-            color: #333;
-        }
-        .timeline {
-            margin-top: 30px;
-        }
-        .timeline h3 {
-            color: #1a237e;
-            margin-bottom: 20px;
-            font-size: 1.3em;
-        }
-        .timeline-item {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            position: relative;
-            margin-left: 20px;
-        }
-        .timeline-item::before {
-            content: '';
-            position: absolute;
-            left: -20px;
-            top: 20px;
-            width: 10px;
-            height: 10px;
-            background: #1a237e;
-            border-radius: 50%;
-        }
-        .timeline-item::after {
-            content: '';
-            position: absolute;
-            left: -15px;
-            top: 30px;
-            width: 2px;
-            height: calc(100% + 10px);
-            background: #e0e0e0;
-        }
-        .timeline-item:last-child::after {
-            display: none;
-        }
-        .timeline-actor {
-            font-weight: 600;
-            color: #1a237e;
-        }
-        .timeline-time {
-            color: #666;
-            font-size: 0.9em;
-        }
-        .timeline-status {
-            margin-top: 5px;
-            color: #333;
-        }
-        .qr-section {
-            text-align: center;
-            margin-top: 30px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-        .qr-code {
-            margin: 20px 0;
-        }
-        .qr-code img {
-            max-width: 200px;
-            height: auto;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-        }
-        .footer {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            background: #f8f9fa;
-        }
-        @media (max-width: 600px) {
-            .container { margin: 10px; }
-            .header h1 { font-size: 2em; }
-            .content { padding: 20px; }
-            .info-row { flex-direction: column; }
-            .info-label { margin-bottom: 5px; }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔍 Tra cứu sản phẩm</h1>
-            <div class="product-id">${productId}</div>
-        </div>
-        
-        <div class="content">
-            <div class="info-card">
-                <h3>📊 Thông tin sản phẩm</h3>
-                <div class="info-row">
-                    <span class="info-label">Mã sản phẩm:</span>
-                    <span class="info-value">${productId}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Trạng thái hiện tại:</span>
-                    <span class="info-value">${lastUpdate.status || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Vị trí hiện tại:</span>
-                    <span class="info-value">${lastUpdate.location || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Người cập nhật cuối:</span>
-                    <span class="info-value">${lastUpdate.actor || 'N/A'}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Thời gian cập nhật:</span>
-                    <span class="info-value">${new Date(lastUpdate.timestamp).toLocaleString('vi-VN')}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Số block trong chuỗi:</span>
-                    <span class="info-value">${history.length}</span>
-                </div>
-            </div>
-
-            <div class="timeline">
-                <h3>📈 Lịch sử chuỗi cung ứng</h3>
-                ${history.map((item, index) => `
-                    <div class="timeline-item">
-                        <div class="timeline-actor">${item.actor || 'Unknown'}</div>
-                        <div class="timeline-time">${new Date(item.timestamp).toLocaleString('vi-VN')}</div>
-                        <div class="timeline-status">${item.status || 'N/A'}</div>
-                        ${item.location ? `<div style="color: #666; font-size: 0.9em; margin-top: 5px;">📍 ${item.location}</div>` : ''}
-                    </div>
-                `).join('')}
-            </div>
-
-            ${productInfo.qrCode ? `
-            <div class="qr-section">
-                <h3>📱 QR Code sản phẩm</h3>
-                <div class="qr-code">
-                    <img src="${productInfo.qrCode}" alt="QR Code cho sản phẩm ${productId}">
-                </div>
-                <p>Quét QR code này để chia sẻ thông tin sản phẩm</p>
-            </div>
-            ` : ''}
-        </div>
-        
-        <div class="footer">
-            <p>Supply Chain Blockchain System</p>
-            <p>Thời gian tra cứu: ${new Date().toLocaleString('vi-VN')}</p>
-        </div>
-    </div>
-</body>
-</html>
-        `;
-
-        res.send(html);
-    } catch (error) {
-        console.error('Lỗi serve trang tra cứu:', error);
-        res.status(500).send(`
             <!DOCTYPE html>
             <html lang="vi">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Lỗi Server - Supply Chain Blockchain</title>
+                <title>Lịch sử sản phẩm - ${productId}</title>
                 <style>
-                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
-                    .error { background: #ffebee; color: #c62828; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 500px; }
+                    * { 
+                        margin: 0; 
+                        padding: 0; 
+                        box-sizing: border-box; 
+                    }
+                    body { 
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        padding: 20px;
+                        line-height: 1.6;
+                    }
+                    .container {
+                        max-width: 800px;
+                        margin: 0 auto;
+                        background: white;
+                        border-radius: 15px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                        overflow: hidden;
+                        position: relative;
+                        z-index: 1;
+                    }
+                    .header {
+                        background: #1a237e;
+                        color: white;
+                        padding: 25px;
+                        text-align: center;
+                    }
+                    .header h1 {
+                        font-size: 24px;
+                        margin-bottom: 10px;
+                    }
+                    .header p {
+                        opacity: 0.9;
+                        font-size: 14px;
+                    }
+                    .product-info {
+                        background: #e3f2fd;
+                        padding: 25px;
+                        text-align: center;
+                        border-bottom: 2px solid #bbdefb;
+                    }
+                    .product-info h2 {
+                        color: #1a237e;
+                        margin-bottom: 15px;
+                        font-size: 20px;
+                    }
+                    .stats {
+                        display: flex;
+                        justify-content: center;
+                        gap: 30px;
+                        margin-top: 15px;
+                        flex-wrap: wrap;
+                    }
+                    .stat-item {
+                        text-align: center;
+                        min-width: 100px;
+                    }
+                    .stat-number {
+                        font-size: 24px;
+                        font-weight: bold;
+                        color: #1a237e;
+                    }
+                    .stat-label {
+                        font-size: 12px;
+                        color: #666;
+                        margin-top: 5px;
+                    }
+                    .events-section {
+                        padding: 25px;
+                    }
+                    .events-title {
+                        color: #1a237e;
+                        margin-bottom: 20px;
+                        text-align: center;
+                        font-size: 20px;
+                        border-bottom: 2px solid #e3f2fd;
+                        padding-bottom: 10px;
+                    }
+                    .event-item {
+                        background: #f8f9fa;
+                        border-left: 4px solid #1a237e;
+                        padding: 20px;
+                        margin-bottom: 20px;
+                        border-radius: 8px;
+                        transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    }
+                    .event-item:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    }
+                    .event-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 15px;
+                        flex-wrap: wrap;
+                        gap: 10px;
+                    }
+                        // CSS hình ảnh 
+                    .image-modal {
+                        display: none;
+                        position: fixed;
+                        z-index: 9999;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        height: 100%;
+                        background-color: rgba(0,0,0,0.9);
+                        animation: fadeIn 0.3s;
+                    }
+
+                    .image-modal-content {
+                        margin: auto;
+                        display: block;
+                        max-width: 90%;
+                        max-height: 90%;
+                        margin-top: 2%;
+                        border-radius: 10px;
+                        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+                        animation: zoomIn 0.3s;
+                    }
+
+                    .image-modal-close {
+                        position: absolute;
+                        top: 20px;
+                        right: 35px;
+                        color: #f1f1f1;
+                        font-size: 40px;
+                        font-weight: bold;
+                        cursor: pointer;
+                        transition: 0.3s;
+                        z-index: 10000;
+                    }
+
+                    .image-modal-close:hover {
+                        color: #bbb;
+                    }
+
+                    .image-modal-caption {
+                        margin: auto;
+                        display: block;
+                        width: 80%;
+                        max-width: 700px;
+                        text-align: center;
+                        color: #ccc;
+                        padding: 10px 0;
+                        height: 150px;
+                    }
+
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+
+                    @keyframes zoomIn {
+                        from { transform: scale(0.8); opacity: 0; }
+                        to { transform: scale(1); opacity: 1; }
+                    }
+
+                    .image-button {
+                        background: #1a237e;
+                        color: white;
+                        border: none;
+                        padding: 8px 15px;
+                        border-radius: 5px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        margin-top: 10px;
+                        transition: background 0.3s;
+                    }
+
+                    .image-button:hover {
+                        background: #283593;
+                    }
+                    .block-number {
+                        background: #1a237e;
+                        color: white;
+                        padding: 6px 12px;
+                        border-radius: 20px;
+                        font-size: 12px;
+                        font-weight: bold;
+                    }
+                    .timestamp {
+                        color: #666;
+                        font-size: 12px;
+                        font-weight: 500;
+                    }
+                    .event-details p {
+                        margin-bottom: 8px;
+                        color: #333;
+                        line-height: 1.5;
+                    }
+                    .event-details strong {
+                        color: #1a237e;
+                        min-width: 120px;
+                        display: inline-block;
+                    }
+                    .event-details em {
+                        color: #999;
+                        font-style: italic;
+                    }
+                    .footer {
+                        text-align: center;
+                        padding: 20px;
+                        background: #f5f5f5;
+                        color: #666;
+                        font-size: 12px;
+                        border-top: 1px solid #e0e0e0;
+                    }
+                    /* Mobile Responsive */
+                    @media (max-width: 600px) {
+                        body {
+                            padding: 10px;
+                        }
+                        .container {
+                            border-radius: 10px;
+                        }
+                        .header {
+                            padding: 20px 15px;
+                        }
+                        .header h1 {
+                            font-size: 20px;
+                        }
+                        .product-info {
+                            padding: 20px 15px;
+                        }
+                        .product-info h2 {
+                            font-size: 18px;
+                        }
+                        .stats {
+                            gap: 20px;
+                        }
+                        .stat-item {
+                            min-width: 80px;
+                        }
+                        .stat-number {
+                            font-size: 20px;
+                        }
+                        .events-section {
+                            padding: 20px 15px;
+                        }
+                        .events-title {
+                            font-size: 18px;
+                        }
+                        .event-item {
+                            padding: 15px;
+                            margin-bottom: 15px;
+                        }
+                        .event-header {
+                            flex-direction: column;
+                            align-items: flex-start;
+                            gap: 8px;
+                        }
+                        .event-details p {
+                            font-size: 14px;
+                        }
+                        .event-details strong {
+                            min-width: 100px;
+                            font-size: 13px;
+                        }
+                    }
+                    @media (max-width: 400px) {
+                        .stats {
+                            flex-direction: column;
+                            gap: 15px;
+                        }
+                        .stat-item {
+                            min-width: auto;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>📦 Supply Chain Blockchain</h1>
+                        <p>Lịch sử truy xuất nguồn gốc</p>
+                    </div>
+                    
+                    <div class="product-info">
+                        <h2>Mã sản phẩm: <span style="color: #1a237e;">${productId}</span></h2>
+                        <div class="stats">
+                            <div class="stat-item">
+                                <div class="stat-number">${history.length}</div>
+                                <div class="stat-label">SỰ KIỆN</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number">#${sortedEvents[0].blockIndex}</div>
+                                <div class="stat-label">BLOCK MỚI NHẤT</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-number">${sortedEvents.length}</div>
+                                <div class="stat-label">TỔNG SỐ</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="events-section">
+                        <h3 class="events-title">📋 Lịch sử sự kiện</h3>
+                        ${eventsHTML || '<div class="event-item"><p><em>Chưa có sự kiện nào được ghi nhận</em></p></div>'}
+                    </div>
+                    
+                    <div class="footer">
+                        <p>🔒 Dữ liệu được bảo mật bằng Blockchain - Quét mã QR để xem thông tin</p>
+                        <p style="margin-top: 5px; font-size: 11px; opacity: 0.7;">© 2025 Supply Chain Blockchain System</p>
+                    </div>
+                </div>
+                <div id="imageModal" class="image-modal">
+                    <span class="image-modal-close">&times;</span>
+                    <img class="image-modal-content" id="modalImage">
+                    <div id="modalCaption" class="image-modal-caption"></div>
+                </div>
+                <script>
+// Hàm hiển thị popup ảnh
+function showImagePopup(imageUrl) {
+    // Tạo overlay
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:9999; display:flex; justify-content:center; align-items:center;';
+    
+    // Tạo ảnh
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.style.cssText = 'max-width:90%; max-height:90%; border-radius:10px; box-shadow:0 0 20px rgba(0,0,0,0.5);';
+    
+    // Tạo nút đóng
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '×';
+    closeBtn.style.cssText = 'position:absolute; top:20px; right:30px; background:none; border:none; color:white; font-size:40px; cursor:pointer; z-index:10000;';
+    
+    // Sự kiện đóng
+    closeBtn.onclick = function() {
+        document.body.removeChild(overlay);
+    };
+    
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            document.body.removeChild(overlay);
+        }
+    };
+    
+    // Thêm vào DOM
+    overlay.appendChild(img);
+    overlay.appendChild(closeBtn);
+    document.body.appendChild(overlay);
+    
+    // Đóng bằng phím ESC
+    document.addEventListener('keydown', function closeOnEsc(e) {
+        if (e.key === 'Escape') {
+            document.body.removeChild(overlay);
+            document.removeEventListener('keydown', closeOnEsc);
+        }
+    });
+}
+</script>
+            </body>
+            </html>
+        `;
+
+        res.send(html);
+
+    } catch (error) {
+        console.error('❌ Lỗi hiển thị giao diện sản phẩm:', error);
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Lỗi</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { 
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 20px;
+                    }
+                    .error { 
+                        background: white;
+                        padding: 40px;
+                        border-radius: 15px;
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                        text-align: center;
+                        max-width: 500px;
+                        width: 100%;
+                    }
+                    .error h1 { 
+                        color: #d32f2f; 
+                        margin-bottom: 15px;
+                    }
+                    .error p { 
+                        color: #666;
+                        line-height: 1.5;
+                    }
                 </style>
             </head>
             <body>
                 <div class="error">
-                    <h1>❌ Lỗi Server</h1>
-                    <p>Không thể tải thông tin sản phẩm</p>
+                    <h1>❌ Có lỗi xảy ra</h1>
+                    <p>${error.message}</p>
                 </div>
             </body>
             </html>
@@ -1087,8 +1539,10 @@ app.get('/api/qrcode/:productId', async (req, res) => {
             });
         }
 
-        // Kiểm tra sản phẩm có tồn tại không
+        console.log(`🔍 Kiểm tra sản phẩm: ${productId}`);
+        
         const history = supplyChain.getProduct(productId);
+        
         if (!history || history.length === 0) {
             return res.status(404).json({
                 success: false,
@@ -1096,30 +1550,36 @@ app.get('/api/qrcode/:productId', async (req, res) => {
             });
         }
 
-        // URL để tra cứu (sử dụng IP WiFi tự động phát hiện và port backend)
-        const serverIP = process.env.SERVER_IP || wifiIP;
+        const serverIP = process.env.SERVER_IP || wifiIP || '172.16.16.105';
         const backendPort = process.env.BACKEND_PORT || '5000';
-        const queryURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(productId)}`;
         
-        // Tạo QR code
-        const qrCodeDataURL = await QRCode.toDataURL(queryURL, {
+        // 🔥 SỬA: Trỏ đến giao diện HTML thay vì API JSON
+        const productURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(productId)}`;
+        
+        // console.log(`🔄 Tạo QR code cho giao diện: ${productURL}`);
+        
+        const qrCodeDataURL = await QRCode.toDataURL(productURL, {
             width: 400,
             margin: 2,
+            errorCorrectionLevel: 'H',
             color: {
-                dark: '#1a237e',
+                dark: '#000000',
                 light: '#FFFFFF'
             }
         });
 
+        console.log(`✅ QR code created successfully`);
+        
         res.json({
             success: true,
             productId: productId,
             qrCode: qrCodeDataURL,
-            url: queryURL,
-            blockCount: history.length
+            url: productURL,  // URL giao diện mới
+            blockCount: history.length,
+            scanNote: "Quét mã này từ điện thoại để xem lịch sử sản phẩm"
         });
     } catch (error) {
-        console.error('Lỗi tạo QR code:', error);
+        console.error('❌ Lỗi tạo QR code:', error);
         res.status(500).json({
             success: false,
             message: 'Lỗi tạo QR code',
@@ -1188,8 +1648,7 @@ app.get('/api/smart-contract/info', (req, res) => {
 app.get('/api/smart-contract/permissions/:role', (req, res) => {
     try {
         const { role } = req.params;
-        const permissions = supplyChain.getRolePermissions(role);
-        
+        const permissions = supplyChain.smartContract.getRolePermissions(role);        
         res.json({
             success: true,
             data: {
@@ -1320,6 +1779,19 @@ app.use((err, req, res, next) => {
         message: 'Lỗi server',
         error: process.env.NODE_ENV === 'development' ? err.message : 'Internal Server Error'
     });
+});
+
+// Thêm route test cơ bản
+app.get('/', (req, res) => {
+  res.json({ message: 'Backend server is running!' });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    corsConfig: corsOptions.origin
+  });
 });
 
 const PORT = process.env.PORT || 5000;

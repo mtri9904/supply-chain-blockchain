@@ -222,6 +222,40 @@
             border-radius: 8px;
             margin: 15px 0;
         }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .empty-message {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .timeline-status {
+            font-weight: bold;
+            color: #1a237e;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .timeline-info {
+            margin-bottom: 5px;
+            color: #555;
+        }
+        .form-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .dynamic-fields {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #1a237e;
+        }
     </style>
 </head>
 <body>
@@ -273,11 +307,11 @@
         </div>
     </div>
 
-
     <script>
         // Sử dụng IP để điện thoại có thể kết nối
         // API_URL will be set by config.js
         let currentUser = null;
+        const API_URL = window.API_URL || 'http://localhost:5000';
 
         // Kiểm tra đăng nhập
         function checkAuth() {
@@ -335,69 +369,99 @@
             switch(role) {
                 case 'farmer':
                     formContent = `
-                        <h2>🌾 Ghi nhận thông tin thu hoạch</h2>
+                        <h2>🌾 Ghi nhận thông tin nông nghiệp</h2>
                         ${commonFields}
                         <div class="form-group">
-                            <label for="harvestDate">Ngày thu hoạch *</label>
-                            <input type="date" id="harvestDate" required>
+                            <label for="eventType">Loại sự kiện *</label>
+                            <select id="eventType" required onchange="toggleFarmerFields()">
+                                <option value="">-- Chọn sự kiện --</option>
+                                <option value="planting">Trồng cây</option>
+                                <option value="fertilizing">Bón phân</option>
+                                <option value="watering">Tưới nước</option>
+                                <option value="harvesting">Thu hoạch</option>
+                                <option value="quality_check">Kiểm tra chất lượng</option>
+                            </select>
                         </div>
-                        <div class="form-group">
-                            <label for="quantity">Số lượng (kg) *</label>
-                            <input type="number" id="quantity" required min="0" step="0.1">
+                        
+                        <!-- Dynamic fields based on event type -->
+                        <div id="dynamicFields" class="dynamic-fields">
+                            <!-- Fields sẽ được thay đổi dựa trên loại sự kiện -->
+                            <div class="form-group">
+                                <label for="harvestDate">Ngày thực hiện *</label>
+                                <input type="date" id="harvestDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="quantity">Số lượng (kg) *</label>
+                                <input type="number" id="quantity" required min="0" step="0.1">
+                            </div>
                         </div>
+                        
                         <div class="form-group">
                             <label for="quality">Chất lượng</label>
-                            <select id="quality" required>
+                            <select id="quality">
                                 <option value="A">Loại A - Cao cấp</option>
                                 <option value="B">Loại B - Tiêu chuẩn</option>
                                 <option value="C">Loại C - Thường</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="notes">Ghi chú</label>
-                            <textarea id="notes" placeholder="Thông tin thêm về lô hàng..."></textarea>
+                            <label for="notes">Ghi chú chi tiết *</label>
+                            <textarea id="notes" placeholder="Mô tả chi tiết sự kiện..." required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="imageUpload">Hình ảnh minh chứng (tùy chọn)</label>
+                            <input type="file" id="imageUpload" accept="image/*">
+                            <div class="form-text">Tải lên hình ảnh minh chứng cho sự kiện</div>
                         </div>
                     `;
                     break;
 
                 case 'shipper':
                     formContent = `
-                        <h2>🚚 Cập nhật vận chuyển</h2>
+                        <h2>🚚 Cập nhật vận chuyển & Logistics</h2>
                         ${commonFields}
                         <div class="form-group">
-                            <label for="status">Trạng thái *</label>
-                            <select id="status" required>
+                            <label for="eventType">Loại sự kiện *</label>
+                            <select id="eventType" required>
                                 <option value="pickup">Đã lấy hàng</option>
                                 <option value="intransit">Đang vận chuyển</option>
+                                <option value="warehouse">Nhập kho</option>
                                 <option value="delivered">Đã giao hàng</option>
+                                <option value="delay">Trì hoãn</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="fromLocation">Điểm lấy hàng *</label>
+                            <label for="fromLocation">Điểm đi *</label>
                             <input type="text" id="fromLocation" required>
                         </div>
                         <div class="form-group">
-                            <label for="toLocation">Điểm giao hàng *</label>
+                            <label for="toLocation">Điểm đến *</label>
                             <input type="text" id="toLocation" required>
                         </div>
                         <div class="form-group">
                             <label for="temperature">Nhiệt độ (°C)</label>
-                            <input type="number" id="temperature" step="0.1">
+                            <input type="number" id="temperature" step="0.1" placeholder="Nhiệt độ bảo quản">
+                        </div>
+                        <div class="form-group">
+                            <label for="notes">Ghi chú vận chuyển *</label>
+                            <textarea id="notes" placeholder="Mô tả tình trạng vận chuyển..." required></textarea>
                         </div>
                     `;
                     break;
 
                 case 'factory':
                     formContent = `
-                        <h2>🏭 Ghi nhận sản xuất</h2>
+                        <h2>🏭 Ghi nhận sản xuất & Chế biến</h2>
                         ${commonFields}
                         <div class="form-group">
-                            <label for="processType">Loại quy trình *</label>
-                            <select id="processType" required>
+                            <label for="eventType">Loại quy trình *</label>
+                            <select id="eventType" required>
                                 <option value="cleaning">Làm sạch</option>
-                                <option value="roasting">Rang</option>
-                                <option value="grinding">Xay</option>
+                                <option value="sorting">Phân loại</option>
+                                <option value="roasting">Rang xay</option>
+                                <option value="grinding">Xay nghiền</option>
                                 <option value="packaging">Đóng gói</option>
+                                <option value="quality_control">Kiểm soát chất lượng</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -412,43 +476,210 @@
                             <label for="duration">Thời gian xử lý (phút)</label>
                             <input type="number" id="duration" min="0">
                         </div>
+                        <div class="form-group">
+                            <label for="notes">Ghi chú quy trình *</label>
+                            <textarea id="notes" placeholder="Mô tả chi tiết quy trình sản xuất..." required></textarea>
+                        </div>
                     `;
                     break;
 
                 case 'retailer':
                     formContent = `
-                        <h2>🏪 Ghi nhận bán hàng</h2>
+                        <h2>🏪 Ghi nhận bán hàng & Phân phối</h2>
                         ${commonFields}
                         <div class="form-group">
-                            <label for="saleDate">Ngày bán *</label>
+                            <label for="eventType">Loại sự kiện *</label>
+                            <select id="eventType" required>
+                                <option value="received">Nhập hàng</option>
+                                <option value="sale">Bán hàng</option>
+                                <option value="display">Trưng bày</option>
+                                <option value="promotion">Khuyến mãi</option>
+                                <option value="return">Hàng trả về</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="saleDate">Ngày *</label>
                             <input type="date" id="saleDate" required>
                         </div>
                         <div class="form-group">
-                            <label for="quantity">Số lượng bán (kg) *</label>
+                            <label for="quantity">Số lượng (kg) *</label>
                             <input type="number" id="quantity" required min="0" step="0.1">
                         </div>
                         <div class="form-group">
-                            <label for="price">Giá bán (VNĐ/kg) *</label>
-                            <input type="number" id="price" required min="0">
+                            <label for="price">Giá (VNĐ/kg)</label>
+                            <input type="number" id="price" min="0" placeholder="Giá bán hoặc nhập">
                         </div>
                         <div class="form-group">
                             <label for="customerType">Loại khách hàng</label>
                             <select id="customerType">
                                 <option value="individual">Cá nhân</option>
                                 <option value="business">Doanh nghiệp</option>
+                                <option value="wholesale">Bán sỉ</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="notes">Ghi chú *</label>
+                            <textarea id="notes" placeholder="Mô tả chi tiết sự kiện..." required></textarea>
                         </div>
                     `;
                     break;
             }
 
             formContent += `
-                <button type="submit" class="submit-btn" onclick="submitForm()">
-                    💾 Lưu thông tin
+                <div class="form-group" style="margin-top: 20px; padding: 15px; background: #e8f5e8; border-radius: 5px;">
+                    <label style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="agreeBlockchain" required>
+                        <span>✅ Tôi đồng ý ghi dữ liệu này lên blockchain - dữ liệu sẽ không thể thay đổi sau khi ghi</span>
+                    </label>
+                </div>
+                <button type="button" class="submit-btn" onclick="submitEventForm()">
+                    🔐 Ký & Ghi lên Blockchain
                 </button>
             `;
 
+            function setupImagePreview() {
+                const imageInput = document.getElementById('imageUpload');
+                if (imageInput) {
+                    imageInput.addEventListener('change', function(e) {
+                        const file = e.target.files[0];
+                        if (file) {
+                            // Tạo preview
+                            const reader = new FileReader();
+                            reader.onload = function(e) {
+                                // Xóa preview cũ nếu có
+                                const oldPreview = document.getElementById('imagePreview');
+                                if (oldPreview) oldPreview.remove();
+                                
+                                // Tạo preview mới
+                                const preview = document.createElement('div');
+                                preview.id = 'imagePreview';
+                                preview.innerHTML = `
+                                    <div style="margin-top: 10px; text-align: center;">
+                                        <img src="${e.target.result}" 
+                                            style="max-width: 200px; max-height: 200px; border-radius: 5px; border: 2px solid #1a237e;">
+                                        <br>
+                                        <button type="button" onclick="removeImage()" 
+                                            style="margin-top: 5px; padding: 5px 10px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                                            ❌ Xóa ảnh
+                                        </button>
+                                    </div>
+                                `;
+                                imageInput.parentNode.appendChild(preview);
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }
+
             section.innerHTML = formContent;
+            
+            // Set default date to today
+            const dateField = document.getElementById('harvestDate') || document.getElementById('saleDate');
+            if (dateField) {
+                dateField.valueAsDate = new Date();
+            }
+            setTimeout(setupImagePreview, 100);
+        }
+
+        // Dynamic form fields for farmer
+        function toggleFarmerFields() {
+            const eventType = document.getElementById('eventType').value;
+            const dynamicFields = document.getElementById('dynamicFields');
+            
+            if (!dynamicFields) return;
+            
+            let fieldsHTML = '';
+            
+            switch(eventType) {
+                case 'planting':
+                    fieldsHTML = `
+                        <div class="form-group">
+                            <label for="harvestDate">Ngày trồng *</label>
+                            <input type="date" id="harvestDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="seedType">Loại giống</label>
+                            <input type="text" id="seedType" placeholder="Loại giống sử dụng">
+                        </div>
+                        <div class="form-group">
+                            <label for="area">Diện tích (m²)</label>
+                            <input type="number" id="area" min="0" step="0.1">
+                        </div>
+                    `;
+                    break;
+                    
+                case 'fertilizing':
+                    fieldsHTML = `
+                        <div class="form-group">
+                            <label for="harvestDate">Ngày bón phân *</label>
+                            <input type="date" id="harvestDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="fertilizerType">Loại phân bón</label>
+                            <input type="text" id="fertilizerType" placeholder="Loại phân bón sử dụng">
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">Lượng phân (kg) *</label>
+                            <input type="number" id="quantity" required min="0" step="0.1">
+                        </div>
+                    `;
+                    break;
+                    
+                case 'watering':
+                    fieldsHTML = `
+                        <div class="form-group">
+                            <label for="harvestDate">Ngày tưới *</label>
+                            <input type="date" id="harvestDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="waterSource">Nguồn nước</label>
+                            <input type="text" id="waterSource" placeholder="Nguồn nước sử dụng">
+                        </div>
+                        <div class="form-group">
+                            <label for="duration">Thời gian tưới (phút)</label>
+                            <input type="number" id="duration" min="0">
+                        </div>
+                    `;
+                    break;
+                    
+                case 'harvesting':
+                    fieldsHTML = `
+                        <div class="form-group">
+                            <label for="harvestDate">Ngày thu hoạch *</label>
+                            <input type="date" id="harvestDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">Số lượng thu hoạch (kg) *</label>
+                            <input type="number" id="quantity" required min="0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="yield">Năng suất (kg/m²)</label>
+                            <input type="number" id="yield" min="0" step="0.1">
+                        </div>
+                    `;
+                    break;
+                    
+                default:
+                    fieldsHTML = `
+                        <div class="form-group">
+                            <label for="harvestDate">Ngày thực hiện *</label>
+                            <input type="date" id="harvestDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">Số lượng (nếu có)</label>
+                            <input type="number" id="quantity" min="0" step="0.1">
+                        </div>
+                    `;
+            }
+            
+            dynamicFields.innerHTML = fieldsHTML;
+            
+            // Set default date
+            const dateField = document.getElementById('harvestDate');
+            if (dateField) {
+                dateField.valueAsDate = new Date();
+            }
         }
 
         function showSection(sectionName) {
@@ -466,21 +697,112 @@
             });
         }
 
+        async function submitEventForm() {
+            // Validate agreement
+            const agreeBlockchain = document.getElementById('agreeBlockchain');
+            if (!agreeBlockchain || !agreeBlockchain.checked) {
+                alert('❌ Vui lòng đồng ý ghi dữ liệu lên blockchain để tiếp tục');
+                return;
+            }
 
-        async function submitForm() {
-            const formData = {};
-            const inputs = document.querySelectorAll('#inputSection input, #inputSection select, #inputSection textarea');
-            inputs.forEach(input => {
-                if (input.value) {
-                    formData[input.id] = input.value;
+            let imageData = {
+                imageUrl: '',
+                thumbUrl: '', 
+                imageName: ''
+            };
+            
+            const imageInput = document.getElementById('imageUpload');
+
+            // 🔥 CHỈ UPLOAD ẢNH 1 LẦN
+            if (imageInput.files.length > 0) {
+                try {
+                    console.log('🖼️ Đang upload ảnh...');
+                    const uploadResult = await uploadImage(imageInput.files[0]);
+                    
+                    console.log('📊 Upload result:', uploadResult);
+                    
+                    if (uploadResult && uploadResult.success) {
+                        imageData = {
+                            imageUrl: uploadResult.imageUrl,
+                            thumbUrl: uploadResult.imageUrl, // Dùng chung URL
+                            imageName: uploadResult.filename || uploadResult.originalName || imageInput.files[0].name
+                        };
+                        console.log('✅ Dữ liệu ảnh đã xử lý:', imageData);
+                    } else {
+                        console.warn('⚠️ Upload không thành công');
+                        imageData = {
+                            imageUrl: null,
+                            thumbUrl: null,
+                            imageName: ''
+                        };
+                    }
+                } catch (error) {
+                    console.error('❌ Lỗi upload ảnh:', error);
+                    alert('❌ Lỗi upload ảnh: ' + error.message);
+                    imageData = {
+                        imageUrl: null,
+                        thumbUrl: null, 
+                        imageName: ''
+                    };
                 }
-            });
+            } else {
+                console.log('📷 Không có ảnh để upload');
+            }
 
+            // 🔥 THU THẬP DỮ LIỆU FORM - DÙNG imageData ĐÃ XỬ LÝ
+            const formData = {
+                // Thông tin cơ bản
+                productId: document.getElementById('productId')?.value || '',
+                eventType: document.getElementById('eventType')?.value || '',
+                location: document.getElementById('location')?.value || '',
+                
+                // Thông tin mô tả
+                description: document.getElementById('description')?.value || '',
+                notes: document.getElementById('notes')?.value || document.getElementById('description')?.value || '',
+                
+                // Thông tin nông nghiệp (nếu có)
+                quantity: document.getElementById('quantity')?.value || null,
+                quality: document.getElementById('quality')?.value || null,
+                temperature: document.getElementById('temperature')?.value || null,
+                duration: document.getElementById('duration')?.value || null,
+                price: document.getElementById('price')?.value || null,
+                customerType: document.getElementById('customerType')?.value || null,
+                batchNumber: document.getElementById('batchNumber')?.value || null,
+                fromLocation: document.getElementById('fromLocation')?.value || null,
+                toLocation: document.getElementById('toLocation')?.value || null,
+                seedType: document.getElementById('seedType')?.value || null,
+                area: document.getElementById('area')?.value || null,
+                yield: document.getElementById('yield')?.value || null,
+                waterSource: document.getElementById('waterSource')?.value || null,
+                fertilizerType: document.getElementById('fertilizerType')?.value || null,
+                harvestDate: document.getElementById('harvestDate')?.value || null,
+                saleDate: document.getElementById('saleDate')?.value || null,
+                
+                // 🔥 QUAN TRỌNG: DÙNG imageData ĐÃ XỬ LÝ
+                imageUrl: imageData.imageUrl,
+                thumbUrl: imageData.thumbUrl,
+                imageName: imageData.imageName,
+            };
+
+            // Thêm thông tin user
+            formData.userId = currentUser.id; 
+            formData.username = currentUser.username;
             formData.actor = currentUser.username;
             formData.role = currentUser.role;
+            formData.timestamp = new Date().toISOString();
+            formData.action = 'record_event';
+
+            console.log('📤 Dữ liệu gửi đi (có ảnh):', formData);
 
             try {
-                const response = await fetch(`${window.API_URL}/api/record`, {
+                // Hiển thị loading
+                const submitBtn = document.querySelector('.submit-btn');
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '⏳ Đang gửi...';
+                submitBtn.disabled = true;
+
+                // 🔥 CHỈ GỬI 1 REQUEST DUY NHẤT đến /api/record-event
+                const response = await fetch(`${API_URL}/api/record-event`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -489,162 +811,313 @@
                     body: JSON.stringify(formData)
                 });
 
-                console.log('📡 Response status:', response.status);
-                console.log('📡 Response headers:', response.headers);
-                
+                console.log('📨 Response status:', response.status);
+
                 if (!response.ok) {
-                    // Xử lý lỗi HTTP
                     let errorMessage = `HTTP ${response.status}: `;
                     try {
                         const errorData = await response.json();
-                        errorMessage += errorData.message || 'Có lỗi xảy ra';
-                        if (errorData.hint) {
-                            errorMessage += '\n\n💡 Gợi ý: ' + errorData.hint;
-                        }
-                        if (errorData.action) {
-                            errorMessage += '\n\n📌 Hành động: ' + errorData.action;
-                        }
-                        if (errorData.debug) {
-                            console.log('🔍 Debug info:', errorData.debug);
-                        }
-                    } catch (parseError) {
-                        errorMessage += 'Không thể parse response';
+                        errorMessage += errorData.error || 'Có lỗi xảy ra';
+                    } catch (e) {
+                        const text = await response.text();
+                        errorMessage += text || 'Không thể đọc phản hồi từ server';
                     }
                     throw new Error(errorMessage);
                 }
 
                 const data = await response.json();
+                console.log('✅ Response data:', data);
                 
-                console.log('📡 Response từ server:', data);
-                console.log('🔍 Có QR Code?', !!data.data?.qrCode);
-                console.log('👤 User role:', currentUser.role);
-                
-                                // Hiển thị thông báo thành công (cho tất cả role)
-                if (data.data && data.data.qrCode) {
-                    alert('✅ Thông tin đã được ghi nhận thành công!\n📱 QR Code đã được tạo và lưu vào lịch sử.');
+                // Hiển thị kết quả thành công
+                if (data.success) {
+
+                    showEventSuccess(data.data || data);
+                    
+                    // Reset form nhưng giữ lại productId
+                    const productIdValue = document.getElementById('productId').value;
+                    document.querySelectorAll('#inputSection input, #inputSection select, #inputSection textarea').forEach(input => {
+                        if (input.id !== 'productId') {
+                            if (input.type === 'checkbox') {
+                                input.checked = false;
+                            } else if (input.type !== 'file') {
+                                input.value = '';
+                            }
+                        }
+                    });
+                    
+                    // Reload history
+                    loadUserHistory();
                 } else {
-                    alert('✅ Thông tin đã được ghi nhận thành công!');
+                    throw new Error(data.message || 'Có lỗi xảy ra khi ghi sự kiện');
                 }
-                
-                // Reset form và reload history
-                loadUserHistory();
-                inputs.forEach(input => {
-                    if (input.type !== 'select-one') {
-                        input.value = '';
-                    }
-                });
+
             } catch (error) {
-                console.error('❌ Submit error:', error);
-                
-                // Xử lý các loại lỗi khác nhau
-                let errorMessage = '';
-                if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                    errorMessage = '❌ Lỗi kết nối server!\n\n' +
-                                 '🔍 Kiểm tra:\n' +
-                                 '• Server có đang chạy không?\n' +
-                                 '• URL server có đúng không?\n' +
-                                 '• Có lỗi CORS không?\n\n' +
-                                 '📌 Thử:\n' +
-                                 '• Refresh trang\n' +
-                                 '• Kiểm tra console để xem chi tiết lỗi';
-                } else if (error.name === 'SyntaxError') {
-                    errorMessage = '❌ Lỗi parse dữ liệu từ server!\n\n' +
-                                 'Server trả về dữ liệu không đúng định dạng JSON.';
-                } else {
-                    errorMessage = `❌ Lỗi: ${error.message}`;
+                console.error('❌ Submit event error:', error);
+                alert(`❌ Lỗi: ${error.message}`);
+            } finally {
+                // Khôi phục button
+                const submitBtn = document.querySelector('.submit-btn');
+                if (submitBtn) {
+                    submitBtn.innerHTML = '🔐 Ký & Ghi lên Blockchain';
+                    submitBtn.disabled = false;
                 }
-                
-                alert(errorMessage);
             }
         }
-
-        async function loadUserHistory() {
-            const historyContent = document.getElementById('historyContent');
-            historyContent.innerHTML = '<div class="loading">⏳ Đang tải lịch sử...</div>';
-
+        
+        async function uploadImage(file) {
             try {
-                // Wait for API_URL to be available
-                if (!window.API_URL) {
-                    await new Promise(resolve => {
-                        const checkInterval = setInterval(() => {
-                            if (window.API_URL) {
-                                clearInterval(checkInterval);
-                                resolve();
-                            }
-                        }, 100);
-                    });
-                }
-
-                console.log('Loading history with API URL:', window.API_URL);
-                const response = await fetch(`${window.API_URL}/api/user-history/${currentUser.username}`, {
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
+                console.log('🔄 Bắt đầu upload ảnh:', {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type
                 });
 
-                // Check if response is JSON
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    const text = await response.text();
-                    console.error('Non-JSON response:', text);
-                    throw new Error(`Server trả về HTML thay vì JSON. Status: ${response.status}. Response: ${text.substring(0, 200)}...`);
+                const formData = new FormData();
+                formData.append('image', file);
+
+                console.log('📤 Gửi request đến /api/upload-image...');
+                
+                // SỬA: Thêm API_URL đầy đủ
+                const response = await fetch(`${API_URL}/api/upload-image`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                console.log('📨 Response status:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ HTTP Error:', response.status, errorText);
+                    throw new Error(`Server trả về lỗi: ${response.status}`);
                 }
 
-                const data = await response.json();
+                const result = await response.json();
+                console.log('✅ Upload result:', result);
 
-                if (response.ok) {
-                    if (!data || data.length === 0) {
-                        historyContent.innerHTML = `
-                            <div class="empty-message">
-                                ℹ️ Chưa có lịch sử cập nhật nào.
-                            </div>
-                        `;
-                        return;
-                    }
-
-                    let html = '';
-                    data.forEach(item => {
-                        const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
-                        
-                        // Tạo phần QR code nếu có
-                        let qrSection = '';
-                        if (item.qrCode) {
-                            qrSection = `
-                                <div class="timeline-qr">
-                                    <img src="${item.qrCode}" 
-                                         alt="QR Code" 
-                                         onclick="enlargeQR('${item.qrCode}', '${item.productId}')"
-                                         title="Click để phóng to QR code">
-                                    <p>📱 Quét QR</p>
-                                </div>
-                            `;
-                        }
-                        
-                        html += `
-                            <div class="timeline-item">
-                                <div class="timeline-content">
-                                    <div class="timeline-status">📍 ${item.status || getRoleAction(currentUser.role)}</div>
-                                    <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
-                                    <div class="timeline-info"><strong>📦 Sản phẩm:</strong> ${item.productId}</div>
-                                    <div class="timeline-info"><strong>📍 Vị trí:</strong> ${item.location}</div>
-                                </div>
-                                ${qrSection}
-                            </div>
-                        `;
-                    });
-
-                    historyContent.innerHTML = html;
+                if (result.success) {
+                    console.log('🎉 Upload thành công! Image URL:', result.imageUrl);
+                    return result;
                 } else {
-                    throw new Error(data.error || 'Có lỗi xảy ra');
+                    throw new Error(result.message || 'Upload thất bại');
                 }
+
             } catch (error) {
-                historyContent.innerHTML = `
-                    <div class="empty-message" style="color: #d32f2f;">
-                        ❌ Lỗi tải lịch sử: ${error.message}
+                console.error('💥 Lỗi upload ảnh:', error);
+                throw error;
+            }
+        }
+        function showFullImage(imageUrl) {
+            if (imageUrl) {
+                window.open(`${API_URL}${imageUrl}`, '_blank');
+            }
+        }
+        // 📌 HÀM XÓA ẢNH
+        function removeImage() {
+            const preview = document.getElementById('imagePreview');
+            const fileInput = document.getElementById('imageUpload');
+            
+            if (preview) preview.remove();
+            if (fileInput) fileInput.value = '';
+            
+            // 🔥 RESET BIẾN ẢNH
+            window.currentImageUrl = null;
+        }
+
+            // Hiển thị kết quả thành công
+            function showEventSuccess(data) {
+                const eventTypeNames = {
+                    'planting': 'Trồng cây',
+                    'fertilizing': 'Bón phân', 
+                    'watering': 'Tưới nước',
+                    'harvesting': 'Thu hoạch',
+                    'quality_check': 'Kiểm tra chất lượng',
+                    'pickup': 'Lấy hàng',
+                    'intransit': 'Đang vận chuyển',
+                    'warehouse': 'Nhập kho',
+                    'delivered': 'Đã giao hàng',
+                    'delay': 'Trì hoãn',
+                    'cleaning': 'Làm sạch',
+                    'sorting': 'Phân loại',
+                    'roasting': 'Rang xay',
+                    'grinding': 'Xay nghiền',
+                    'packaging': 'Đóng gói',
+                    'quality_control': 'Kiểm soát chất lượng',
+                    'received': 'Nhập hàng',
+                    'sale': 'Bán hàng',
+                    'display': 'Trưng bày',
+                    'promotion': 'Khuyến mãi',
+                    'return': 'Hàng trả về'
+                };
+                
+                const eventName = eventTypeNames[data.eventData.eventType] || data.eventData.eventType;
+                // TRONG HÀM showEventSuccess, SỬA imageSection:
+                let imageSection = '';
+                if (data.eventData.imageUrl) {
+                    imageSection = `
+                        <div style="margin-top: 10px;">
+                            <strong>📸 Ảnh minh chứng:</strong><br>
+                            <img src="${API_URL}${data.eventData.imageUrl}" 
+                                style="max-width: 200px; max-height: 200px; border-radius: 5px; margin-top: 5px; border: 1px solid #ddd;">
+                        </div>
+                    `;
+                    console.log('🖼️ Hiển thị ảnh:', data.eventData.imageUrl);
+                }else {
+                    console.log('🚫 Không có ảnh trong data.eventData');
+                }
+               let successHTML = `
+                    <div style="background: #d4edda; color: #155724; padding: 20px; border-radius: 10px; margin-top: 20px;">
+                        <h3 style="margin-bottom: 15px;">✅ Sự kiện đã được ghi thành công!</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div><strong>Sự kiện:</strong> ${eventName}</div>
+                            <div><strong>Mã SP:</strong> ${data.eventData.productId}</div>
+                            <div><strong>Địa điểm:</strong> ${data.eventData.location}</div>
+                            <div><strong>Thời gian:</strong> ${new Date(data.eventData.timestamp).toLocaleString('vi-VN')}</div>
+                            <div><strong>Block:</strong> #${data.blockIndex}</div>
+                            <div><strong>Hash:</strong> ${data.transactionHash.substring(0, 20)}...</div>
+                        </div>
+                        ${data.eventData.notes ? `<div style="margin-top: 10px;"><strong>Ghi chú:</strong> ${data.eventData.notes}</div>` : ''}
+                        ${imageSection}
                     </div>
                 `;
+                
+                // Temporary show success message
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = successHTML;
+                document.getElementById('inputSection').appendChild(tempDiv);
+                
+                // Auto remove after 8 seconds
+                setTimeout(() => {
+                    tempDiv.remove();
+                }, 8000);
             }
+
+    async function loadUserHistory() {
+        const historyContent = document.getElementById('historyContent');
+        historyContent.innerHTML = '<div class="loading">⏳ Đang tải lịch sử...</div>';
+
+        try {
+            const response = await fetch(`${API_URL}/api/user-events/${currentUser.username}`, {
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                if (!data.events || data.events.length === 0) {
+                    historyContent.innerHTML = `
+                        <div class="empty-message">
+                            ℹ️ Chưa có lịch sử cập nhật nào.
+                        </div>
+                    `;
+                    return;
+                }
+
+                let html = '';
+                
+                // Duyệt qua từng sự kiện và tạo QR code
+                for (let item of data.events) {
+                    const timestamp = new Date(item.timestamp).toLocaleString('vi-VN');
+                    
+                    // Gọi API để lấy QR code cho sản phẩm
+                    let qrCode = '';
+                    try {
+                        const qrResponse = await fetch(`${API_URL}/api/qrcode/${item.productId}`);
+                        if (qrResponse.ok) {
+                            const qrData = await qrResponse.json();
+                            if (qrData.success) {
+                                qrCode = qrData.qrCode;
+                            }
+                        }
+                    } catch (qrError) {
+                        console.log('❌ Không thể tạo QR code:', qrError);
+                    }
+                    let imageHtml = '';
+                    if (item.imageUrl) {
+                        imageHtml = `
+                            <div class="timeline-info">
+                                <strong>📸 Ảnh:</strong> 
+                                <img src="${API_URL}${item.imageUrl}" 
+                                    style="max-width: 100px; max-height: 100px; border-radius: 3px; margin-left: 5px; cursor: pointer;"
+                                    onclick="showFullImage('${item.imageUrl}')"
+                                    title="Click để xem ảnh lớn">
+                            </div>
+                        `;
+                    }
+                    // Tạo phần QR code nếu có
+                    let qrSection = '';
+                    if (qrCode) {
+                        qrSection = `
+                            <div class="timeline-qr">
+                                <img src="${qrCode}" 
+                                    alt="QR Code" 
+                                    onclick="enlargeQR('${qrCode}', '${item.productId}', ${item.blockIndex})"
+                                    title="Click để phóng to QR code">
+                                <p>📱 Quét QR</p>
+                            </div>
+                        `;
+                    }
+                    
+                    // Tạo HTML cho mỗi item
+                    html += `
+                        <div class="timeline-item">
+                            <div class="timeline-content">
+                                <div class="timeline-status">${item.status}</div>
+                                <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
+                                <div class="timeline-info"><strong>📦 Sản phẩm:</strong> ${item.productId}</div>
+                                <div class="timeline-info"><strong>📍 Địa điểm:</strong> ${item.location}</div>
+                                <div class="timeline-info"><strong>🔗 Block:</strong> #${item.blockIndex}</div>
+                                ${imageHtml}
+                                ${item.notes ? `<div class="timeline-info"><strong>📝 Ghi chú:</strong> ${item.notes}</div>` : ''}
+                            </div>
+                            ${qrSection}
+                        </div>
+                    `;
+                }
+
+                historyContent.innerHTML = html;
+            } else {
+                throw new Error(data.error || 'Có lỗi xảy ra');
+            }
+        } catch (error) {
+            historyContent.innerHTML = `
+                <div class="empty-message" style="color: #d32f2f;">
+                    ❌ Lỗi tải lịch sử: ${error.message}
+                </div>
+            `;
         }
+    }
+
+    // 🔥 THÊM VÀO PHẦN HIỂN THỊ LỊCH SỬ/CHI TIẾT SỰ KIỆN
+    function displayEventWithImage(item) {
+        let imageHTML = '';
+        
+        if (item.thumbBase64) {
+            // Hiển thị nhanh từ Base64 (không cần load từ server)
+            imageHTML = `
+                <div class="event-image" style="margin-top: 10px;">
+                    <img src="${item.thumbBase64}" 
+                        alt="Ảnh minh chứng" 
+                        style="max-width: 150px; border-radius: 5px; cursor: pointer;"
+                        onclick="showFullImage('${item.imageUrl}')"
+                        title="Click để xem ảnh gốc">
+                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                        📷 Có ảnh minh chứng
+                    </div>
+                </div>
+            `;
+        }
+        
+        return imageHTML;
+    }
+
+    // Hàm xem ảnh gốc
+    function showFullImage(imageUrl) {
+        if (imageUrl) {
+            window.open(`${API_URL}${imageUrl}`, '_blank');
+        }
+    }
 
         function getRoleAction(role) {
             const actions = {
@@ -667,7 +1140,7 @@
         // Hiển thị thống kê blockchain
         async function showBlockchainStats() {
             try {
-                const response = await fetch(`${window.API_URL}/api/blockchain/stats`);
+                const response = await fetch(`${API_URL}/api/blockchain/stats`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -690,7 +1163,7 @@
                 alert(`❌ Lỗi lấy thống kê: ${error.message}`);
             }
         }
-
+        
         // Validate blockchain
         async function validateBlockchain(event) {
             try {
@@ -710,7 +1183,7 @@
                     button.disabled = true;
                 }
                 
-                const response = await fetch(`${window.API_URL}/api/blockchain/validate`);
+                const response = await fetch(`${API_URL}/api/blockchain/validate`);
                 const result = await response.json();
                 
                 // Restore button
@@ -744,7 +1217,6 @@
         // Hiển thị QR Code Modal
         function showQRModal(blockData) {
             console.log('🎉 Hiển thị QR Modal cho sản phẩm:', blockData.productId);
-            console.log('📦 Block Data:', blockData);
             
             const modal = document.getElementById('qrModal');
             const qrImage = document.getElementById('qrCodeImage');
@@ -761,7 +1233,6 @@
             // Hiển thị modal
             modal.classList.add('show');
             document.body.style.overflow = 'hidden';
-            console.log('✅ Modal đã được hiển thị với class:', modal.className);
         }
 
         // Đóng QR Modal
@@ -769,30 +1240,12 @@
             console.log('🚪 Đóng QR Modal');
             
             const modal = document.getElementById('qrModal');
-            
-            // Đóng modal bằng cách remove class 'show'
             modal.classList.remove('show');
-            
-            // Restore body scroll
             document.body.style.overflow = 'auto';
-            
-            // Reset form và reload history sau khi đóng modal
-            if (window.pendingFormReset) {
-                console.log('🔄 Reset form và reload history');
-                window.pendingFormReset.forEach(input => {
-                    if (input.type !== 'select-one') {
-                        input.value = '';
-                    }
-                });
-                window.pendingFormReset = null;
-                
-                // Reload history
-                loadUserHistory();
-            }
         }
 
         // Phóng to QR code (từ lịch sử)
-        function enlargeQR(qrCodeData, productId) {
+        function enlargeQR(qrCodeData, productId, blockIndex) {
             console.log('🔍 Phóng to QR cho sản phẩm:', productId);
             
             const modal = document.getElementById('qrModal');
@@ -803,8 +1256,8 @@
 
             // Set thông tin
             productIdEl.textContent = productId;
-            blockIndexEl.textContent = 'Xem từ lịch sử';
-            blockHashEl.textContent = 'QR Code đã lưu';
+            blockIndexEl.textContent = blockIndex || 'N/A';
+            blockHashEl.textContent = 'Quét mã để xem chi tiết';
             qrImage.src = qrCodeData;
 
             // Hiển thị modal
@@ -823,7 +1276,6 @@
             link.download = `QR_${productId.replace(/\s+/g, '_')}.png`;
             link.click();
             
-            // Hiển thị thông báo thành công (không dùng alert để không block modal)
             setTimeout(() => {
                 const confirmed = confirm('✅ Đã tải xuống mã QR!\n\nĐóng cửa sổ này?');
                 if (confirmed) {
@@ -831,14 +1283,10 @@
                 }
             }, 300);
         }
-
-        // Đóng modal khi click bên ngoài - SỬA ĐỂ TRÁNH CONFLICT
+        // Đóng modal khi click bên ngoài
         document.addEventListener('click', function(event) {
             const modal = document.getElementById('qrModal');
-            
-            // Chỉ đóng nếu click vào backdrop (modal), không phải modal-content
             if (event.target === modal && modal.classList.contains('show')) {
-                console.log('👆 Click outside modal - đóng');
                 closeQRModal();
             }
         });
@@ -848,13 +1296,13 @@
         if (modalContent) {
             modalContent.addEventListener('click', function(event) {
                 event.stopPropagation();
-                console.log('👆 Click inside modal - giữ mở');
             });
         }
 
-
         // Kiểm tra đăng nhập khi tải trang
-        checkAuth();
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuth();
+        });
     </script>
     
     <!-- Smart Contract Handler -->
