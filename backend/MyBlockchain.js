@@ -1,4 +1,3 @@
-// backend/MyBlockchain.js
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -7,10 +6,9 @@ const { v4: uuidv4 } = require('uuid'); // Thêm thư viện UUID
 
 const DEFAULT_DATA_FILE = path.join(__dirname, 'node-data', 'default.json');
 
-// Định nghĩa Block class bên trong file
 class Block {
     constructor(timestamp, data, previousHash = '') {
-        this.index = 0;
+        this.index = 0; // Sẽ được set khi thêm vào chain
         this.timestamp = timestamp;
         // --- BẮT ĐẦU THÊM TRƯỜNG MỚI ---
         this.data = {
@@ -21,7 +19,7 @@ class Block {
         };
         // --- KẾT THÚC THÊM TRƯỜNG MỚI ---
         this.previousHash = previousHash;
-        this.nonce = 0;
+        this.nonce = 0; // Số dùng cho mining
         this.hash = this.calculateHash();
     }
 
@@ -74,15 +72,17 @@ class Block {
 
     // Mining: Tìm hash thỏa mãn difficulty (số 0 đầu tiên)
     mineBlock(difficulty) {
-        const target = Array(difficulty + 1).join("0");
+        const target = Array(difficulty + 1).join("0"); // Tạo chuỗi "000..." theo difficulty
         
         console.log(`⛏️  Bắt đầu mining block #${this.index}...`);
         const startTime = Date.now();
         
+        // Tìm nonce sao cho hash bắt đầu bằng số 0 theo difficulty
         while (this.hash.substring(0, difficulty) !== target) {
             this.nonce++;
             this.hash = this.calculateHash();
             
+            // Log progress mỗi 100000 lần thử
             if (this.nonce % 100000 === 0) {
                 console.log(`  Thử lần ${this.nonce}... Hash hiện tại: ${this.hash.substring(0, 10)}...`);
             }
@@ -96,8 +96,6 @@ class Block {
         console.log(`   Hash: ${this.hash}`);
         console.log(`   Thời gian mining: ${miningTime}s`);
         console.log(`   Số lần thử: ${this.nonce.toLocaleString()}\n`);
-        
-        return this.hash;
     }
 }
 
@@ -136,6 +134,7 @@ class Blockchain {
         console.log('🤖 Smart Contract đã được khởi tạo');
         console.log('📋 Available roles:', Object.keys(this.smartContract.getAllRules()));
         
+        // Khởi tạo hoặc load blockchain từ file
         this.loadBlockchain();
     }
 
@@ -159,20 +158,12 @@ class Blockchain {
                 console.log('📂 Đang load blockchain từ file...');
                 const data = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
                 
-                this.chain = data.chain.map(blockData => {
-                    const block = new Block(
-                        blockData.timestamp,
-                        blockData.data,
-                        blockData.previousHash
-                    );
-                    block.index = blockData.index;
-                    block.nonce = blockData.nonce;
-                    block.hash = blockData.hash;
-                    return block;
-                });
                 // Khôi phục chain từ file
                 // QUAN TRỌNG: Preserve exact data từ file để hash không thay đổi
                 this.chain = Array.isArray(data.chain) ? data.chain.map(instantiateBlock) : [];
+                
+                // Khôi phục pending transactions
+                this.pendingTransactions = data.pendingTransactions || [];
                 
                 console.log(`✅ Đã load blockchain với ${this.chain.length} blocks`);
 
@@ -201,6 +192,7 @@ class Blockchain {
         }
     }
 
+    // Lưu blockchain vào file
     saveBlockchain() {
         try {
             this.ensureDataDirectory();
@@ -252,119 +244,94 @@ class Blockchain {
         return this.chain[this.chain.length - 1];
     }
 
-    // Thêm sự kiện mới
-    addTransactionEvent(transactionData) {
-        try {
-            console.log('📝 Đang thêm sự kiện mới:', {
-                productId: transactionData.productId,
-                eventType: transactionData.eventType,
-                role: transactionData.role
-            });
-
-            // Validate với Smart Contract
+    // Thêm giao dịch vào pending (chờ mine) với Smart Contract validation
+    addTransaction(transactionData) {
+        // Validate với Smart Contract nếu có thông tin role và action
+        if (transactionData.role && transactionData.action) {
             const validation = this.smartContract.validateTransaction(
                 transactionData.role,
-                transactionData.eventType,
+                transactionData.action,
                 transactionData,
                 transactionData.actor || 'unknown'
             );
 
+            // Thêm thông tin validation vào transaction
+            transactionData.smartContractValidation = validation;
+
             if (!validation.success) {
                 throw new Error(`Smart Contract validation failed: ${validation.error}`);
             }
+        }
 
-            // Thêm timestamp
-            if (!transactionData.timestamp) {
-                transactionData.timestamp = new Date().toISOString();
-            }
+        this.pendingTransactions.push(transactionData);
+        console.log(`📝 Đã thêm giao dịch vào pending pool (${this.pendingTransactions.length} giao dịch chờ)`);
+    }
 
-            transactionData.action = 'record_event';
+    // Mine tất cả pending transactions thành 1 block
+    minePendingTransactions() {
+        if (this.pendingTransactions.length === 0) {
+            console.log('⚠️  Không có giao dịch nào để mine');
+            return null;
+        }
 
-            // Tạo block mới
-            const previousBlock = this.getLatestBlock();
-            const newBlock = new Block(
-                Date.now(),
-                transactionData,
-                previousBlock.hash
+        console.log(`\n⛏️  Bắt đầu mining ${this.pendingTransactions.length} giao dịch...`);
+        
+        const previousBlock = this.getLatestBlock();
+        const newBlock = new Block(
+            Date.now(),
+            this.pendingTransactions[0], // Trong app này, 1 block = 1 transaction
+            previousBlock.hash
+        );
+        
+        newBlock.index = this.chain.length;
+        newBlock.mineBlock(this.difficulty);
+        
+        this.chain.push(newBlock);
+        
+        // Xóa transaction đã được mine
+        this.pendingTransactions.shift();
+        
+        // Lưu vào file
+        this.saveBlockchain();
+        
+        return newBlock;
+    }
+
+    // Thêm block trực tiếp (có mining) với Smart Contract validation
+    addBlock(newBlockData) {
+        // Validate với Smart Contract nếu có thông tin role và action
+        if (newBlockData.role && newBlockData.action && newBlockData.details) {
+            const validation = this.smartContract.validateTransaction(
+                newBlockData.role,
+                newBlockData.action,
+                newBlockData.details, // Validate dựa trên details thay vì newBlockData
+                newBlockData.actor || 'unknown'
             );
-            
-            newBlock.index = this.chain.length;
-            newBlock.mineBlock(this.difficulty);
-            
-            this.chain.push(newBlock);
-            this.saveBlockchain();
-            
-            console.log(`✅ Đã thêm sự kiện vào block #${newBlock.index}`);
-            
-            return {
-                success: true,
-                blockIndex: newBlock.index,
-                transactionHash: newBlock.hash,
-                timestamp: transactionData.timestamp,
-                eventData: transactionData
-            };
 
-        } catch (error) {
-            console.error('❌ Lỗi khi thêm sự kiện:', error.message);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
+            // Thêm thông tin validation vào block data
+            newBlockData.smartContractValidation = validation;
 
-    // Lấy lịch sử sự kiện của user
-    getUserEvents(username, limit = 50) {
-        const userEvents = [];
-        const searchTerm = username.trim().toLowerCase();
-        
-        for (let i = this.chain.length - 1; i >= 0 && userEvents.length < limit; i--) {
-            const block = this.chain[i];
-            if (block.data && block.data.actor) {
-                const blockActor = block.data.actor.trim().toLowerCase();
-                if (blockActor === searchTerm && block.data.action === 'record_event') {
-                    userEvents.push({
-                        blockIndex: block.index,
-                        timestamp: block.timestamp,
-                        productId: block.data.productId,
-                        eventType: block.data.eventType,
-                        location: block.data.location,
-                        notes: block.data.notes,
-                        status: this.getEventStatusText(block.data.eventType)
-                    });
-                }
+            if (!validation.success) {
+                throw new Error(`Smart Contract validation failed: ${validation.error}`);
             }
         }
+
+        const previousBlock = this.getLatestBlock();
+        const newBlock = new Block(
+            Date.now(),
+            newBlockData,
+            previousBlock.hash
+        );
         
-        return userEvents;
-    }
-
-    getEventStatusText(eventType) {
-        const eventTexts = {
-            'planting': 'Trồng cây',
-            'fertilizing': 'Bón phân',
-            'watering': 'Tưới nước',
-            'harvesting': 'Thu hoạch',
-            'quality_check': 'Kiểm tra chất lượng',
-            'pickup': 'Lấy hàng',
-            'intransit': 'Đang vận chuyển',
-            'warehouse': 'Nhập kho',
-            'delivered': 'Đã giao hàng',
-            'delay': 'Trì hoãn',
-            'cleaning': 'Làm sạch',
-            'sorting': 'Phân loại',
-            'roasting': 'Rang xay',
-            'grinding': 'Xay nghiền',
-            'packaging': 'Đóng gói',
-            'quality_control': 'Kiểm soát chất lượng',
-            'received': 'Nhập hàng',
-            'sale': 'Bán hàng',
-            'display': 'Trưng bày',
-            'promotion': 'Khuyến mãi',
-            'return': 'Hàng trả về'
-        };
-
-        return eventTexts[eventType] || eventType;
+        newBlock.index = this.chain.length;
+        newBlock.mineBlock(this.difficulty);
+        
+        this.chain.push(newBlock);
+        
+        // Lưu vào file
+        this.saveBlockchain();
+        
+        return newBlock;
     }
 
     // Kiểm tra tính hợp lệ của blockchain
@@ -391,16 +358,6 @@ class Blockchain {
             const currentBlock = instantiateBlock(chain[i]);
             const previousBlock = instantiateBlock(chain[i - 1]);
 
-            // Kiểm tra hash
-            const calculatedHash = currentBlock.calculateHash();
-            if (currentBlock.hash !== calculatedHash) {
-                console.error(`❌ Block #${i} có hash không hợp lệ!`);
-                return false;
-            }
-
-            // Kiểm tra liên kết
-            if (currentBlock.previousHash !== previousBlock.hash) {
-                console.error(`❌ Block #${i} không liên kết đúng với block trước!`);
             const calculatedHash = currentBlock.calculateHash();
             if (currentBlock.hash !== calculatedHash) {
                 logError(`❌ Block #${currentBlock.index} có hash không hợp lệ!`);
@@ -559,56 +516,34 @@ class Blockchain {
                 index: this.getLatestBlock().index,
                 hash: this.getLatestBlock().hash,
                 timestamp: this.getLatestBlock().timestamp
-            }
+            },
+            smartContract: this.smartContract.getValidationStats()
         };
     }
-    // Lấy sự kiện theo productId
-    getProduct(productId) {
-        console.log(`🔍 Tìm kiếm sản phẩm: ${productId}`);
-        const productEvents = [];
-        const searchId = productId.trim().toLowerCase();
-        
-        for (let block of this.chain) {
-            if (block.data && block.data.productId) {
-                const blockProductId = block.data.productId.trim().toLowerCase();
-                if (blockProductId === searchId) {
-                    const eventTypeVi = this.getEventStatusText(block.data.eventType);
-                    // 🔥 THÊM TẤT CẢ THÔNG TIN SỰ KIỆN
-                    productEvents.push({
-                        blockIndex: block.index,
-                        timestamp: block.timestamp,
-                        productId: block.data.productId,
-                        eventTypeEn: block.data.eventType,
-                        eventType: eventTypeVi || '',
-                        location: block.data.location || '',
-                        actor: block.data.actor || '',
-                        role: block.data.role || '',
-                        notes: block.data.notes || block.data.description || '',
-                        imageUrl: block.data.imageUrl || null,
-                        imageName: block.data.imageName || null,
-                        // Thêm các trường khác nếu có
-                        quantity: block.data.quantity,
-                        quality: block.data.quality,
-                        temperature: block.data.temperature,
-                        duration: block.data.duration,
-                        price: block.data.price,
-                        customerType: block.data.customerType,
-                        batchNumber: block.data.batchNumber,
-                        fromLocation: block.data.fromLocation,
-                        toLocation: block.data.toLocation,
-                        seedType: block.data.seedType,
-                        area: block.data.area,
-                        yield: block.data.yield,
-                        waterSource: block.data.waterSource,
-                        fertilizerType: block.data.fertilizerType
-                    });
-                }
-            }
-        }
-        
-        console.log(`✅ Tìm thấy ${productEvents.length} sự kiện cho sản phẩm: ${productId}`);
-        console.log('📊 Chi tiết sự kiện:', productEvents);
-        return productEvents;
+
+    // Lấy Smart Contract instance
+    getSmartContract() {
+        return this.smartContract;
+    }
+
+    // Validate transaction với Smart Contract (không thêm vào blockchain)
+    validateTransaction(role, action, data, actor) {
+        return this.smartContract.validateTransaction(role, action, data, actor);
+    }
+
+    // Lấy validation history
+    getValidationHistory(limit = 100) {
+        return this.smartContract.getValidationHistory(limit);
+    }
+
+    // Lấy quyền hạn của role
+    getRolePermissions(role) {
+        return this.smartContract.getRolePermissions(role);
+    }
+
+    // Kiểm tra quyền hạn
+    hasPermission(role, action) {
+        return this.smartContract.hasPermission(role, action);
     }
 
     // Tìm thông tin sản phẩm từ batchNumber
@@ -676,10 +611,4 @@ class Blockchain {
     }
 }
 
-// CUỐI FILE MyBlockchain.js
-const blockchainInstance = new Blockchain();
-
-module.exports = blockchainInstance;
-module.exports.Blockchain = Blockchain;
-module.exports.Block = Block;
-module.exports.SimpleSmartContract = SimpleSmartContract;
+module.exports = { Block, Blockchain };
