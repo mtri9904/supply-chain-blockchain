@@ -1,0 +1,68 @@
+============================
+TỔNG QUAN VẬN HÀNH BLOCKCHAIN NHIỀU NODE (P2P)
+============================
+
+1. Tình trạng hệ thống
+----------------------
+- Đã khởi chạy 3 node backend độc lập:
+  - Node 1: `node server.js --port=5001 --dataFile=node-data/node1.json --name=node-1`
+  - Node 2: `node server.js --port=5002 --dataFile=node-data/node2.json --name=node-2 --peers=http://localhost:5001`
+  - Node 3: `node server.js --port=5003 --dataFile=node-data/node3.json --name=node-3 --peers=http://localhost:5001,http://localhost:5002`
+- Mỗi node lưu blockchain riêng trong `backend/node-data/nodeX.json`.
+- Khi một node tạo block mới → block được broadcast đến các node khác; các node khác validate và thêm vào blockchain của mình.
+
+2. Cách hoạt động tổng thể
+--------------------------
+- **Mining & broadcast:** node phát sinh giao dịch (POST `/api/record`) sẽ mine block, lưu file JSON, đồng thời gọi `/p2p/block` trên toàn bộ peer đã biết.
+- **Nhận block:** node nhận kiểm tra chain hiện tại; nếu block hợp lệ và nối tiếp được → thêm ngay. Nếu thấy thiếu block → tự gọi `/p2p/chain` để đồng bộ chain dài hơn.
+- **WebSocket & REST:** mọi API nghiệp vụ (login, ghi nhận, tra cứu…) vẫn chạy tại từng node. Socket.IO vẫn dùng cho realtime update trên node đang kết nối.
+- **SQL Server:** vẫn dùng chung database users, không đổi schema.
+
+3. Frontend & Tra cứu
+---------------------
+- Frontend (chạy qua Live Server) chỉ cần chỉ định node (API URL). Có thể thêm `?api=http://localhost:5001` vào đường dẫn dashboard, hoặc lưu trong localStorage.
+- Dashboard hiển thị dữ liệu theo node đang kết nối. Khi block mới được broadcast, node dùng WebSocket để push cập nhật realtime cho dashboard đang kết nối tới node đó.
+- Các chức năng tra cứu lịch sử (`/api/history/:batchNumber`), thống kê blockchain, truy vết sản phẩm, Smart Contract... đều hoạt động trên từng node vì bản chất blockchain giống nhau.
+- Khi truy cập trang QR/tra cứu từ bất kỳ node, dữ liệu sẽ giống nhau sau khi đồng bộ block.
+
+4. Kiểm thử thay đổi theo role
+------------------------------
+Ví dụ dòng thời gian:
+1. **Nông dân (farmer)** đăng nhập, ghi nhận thu hoạch -> node 5001 mine block mới, broadcast tới node 5002/5003; các node nhận block và thêm vào file node-data của mình.
+2. **Shipper** cập nhật vận chuyển: cần nhập đúng `batchNumber`. Khi shipper gửi ghi nhận, node sẽ kiểm tra Smart Contract (đúng workflow, trạng thái hợp lệ). Sau khi mine block, thông tin vận chuyển đồng bộ sang tất cả node.
+3. **Factory/Retailer** tương tự: phải đảm bảo các bước trước đã hoàn thành (Smart Contract mới cho phép). Block mới cũng sẽ được broadcast.
+4. Mọi thao tác đều hiển thị trong Dashboard (lịch sử cá nhân, QR code), dù truy cập node nào, miễn là blockchain đã đồng bộ.
+
+5. Kiểm tra nhanh
+-----------------
+- Sau khi thêm block trên node 5001, gọi:
+  - `http://localhost:5002/api/blockchain/stats`
+  - `http://localhost:5003/api/blockchain/stats`
+  để xác nhận `totalBlocks` tăng đều.
+- Xem file `backend/node-data/node2.json` và `node3.json` để chắc chắn block mới xuất hiện.
+- Dùng `GET /p2p/peers` trên mỗi node để kiểm tra danh sách peers hiện tại.
+- Dùng `POST /p2p/sync` nếu cần ép đồng bộ sau khi một node offline quay lại.
+
+6. Trường hợp thử nghiệm role
+-----------------------------
+- **Test Farmer:** đăng nhập tài khoản nông dân, ghi nhận thu hoạch mới. Quan sát log node 5001 (mine block), rồi kiểm tra file node-data của 5002/5003.
+- **Test Shipper cập nhật:** sau khi có block farmer, đăng nhập shipper, cập nhật trạng thái vận chuyển. Cả 3 node cập nhật block shipper.
+- **Test Factory:** đợi shipper trạng thái delivered, factory mới ghi nhận sản xuất; block được broadcast.
+- **Test Retailer:** sau factory, retailer ghi nhận bán hàng, block lan tỏa toàn mạng.
+- Khi xem Dashboard qua bất kỳ node (API URL tương ứng), lịch sử sẽ bao gồm full chuỗi vừa tạo.
+
+7. Chức năng cũ hoạt động thế nào
+---------------------------------
+- JWT auth, giải mã private key, Smart Contract validation, QR Code, WebSocket realtime đều chạy như trước, chỉ khác là mỗi node hoạt động độc lập.
+- Các endpoint `/api/blockchain/stats`, `/api/user-history/:username`, `/api/history/:batchNumber`, `/api/blockchain/validate`... vẫn giữ nguyên format; khi blockchain đồng bộ, kết quả đồng nhất.
+- Tra cứu QR code (`/product/:batchNumber`) từ node bất kỳ sẽ trả về chuỗi sự kiện đồng bộ.
+
+8. Mẹo & lưu ý
+---------------
+- Ghi nhớ node đã chọn trong frontend thông qua `localStorage` (`scb_custom_api_url`). Muốn đổi node, chỉnh query `?api=` hoặc cập nhật localStorage.
+- Mỗi node cần khởi chạy trên port khác nhau; khi node mới biết peer, nó sẽ tự đăng ký và đồng bộ chain lâu nhất.
+- Nếu thấy log báo `OUT_OF_SYNC` hay `PREVIOUS_HASH_MISMATCH`, node sẽ tự gọi `syncWithPeers`; có thể gọi thủ công `POST /p2p/sync`.
+- Node offline quay lại sẽ tự động xin chain dài nhất từ peers, nên không lo dữ liệu lệch.
+
+============================
+

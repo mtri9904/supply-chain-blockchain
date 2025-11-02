@@ -1,0 +1,110 @@
+==============================
+HƯỚNG DẪN CHẠY KIẾN TRÚC BLOCKCHAIN NHIỀU NODE (P2P)
+==============================
+
+1. Chuẩn bị môi trường
+----------------------
+- Node.js v18 trở lên (để sử dụng `fetch` và `AbortSignal.timeout` phía server).
+- Đã cài đặt dependencies backend: `cd backend && npm install`.
+- Mỗi node sẽ lưu blockchain vào file riêng trong thư mục `backend/node-data/`.
+
+2. Tham số cấu hình node
+------------------------
+Có thể cấu hình qua biến môi trường **hoặc** tham số CLI (ưu tiên CLI). Các tham số quan trọng:
+
+| Tham số        | Mô tả                                             | Mặc định |
+|----------------|----------------------------------------------------|----------|
+| `--port`       | Cổng HTTP của node                                 | 5000     |
+| `--dataFile`   | Đường dẫn file JSON lưu blockchain                 | `backend/node-data/node_<port>.json` |
+| `--difficulty` | Độ khó mining (số chữ số 0 đầu hash)               | 4        |
+| `--name`       | Định danh node (hiển thị trong log)                | `node-<port>` |
+| `--host`       | Hostname dùng để ghép URL mặc định (`http://host:port`) | WiFi IP tự phát hiện |
+| `--baseUrl`    | URL đầy đủ của node (ghi đè `host`)                | theo `host` |
+| `--peers`      | Danh sách peer khởi tạo, phân tách bằng dấu phẩy   | (rỗng)   |
+
+Ví dụ tham số CLI: `--port=5001 --dataFile=backend/node-data/node1.json --peers=http://localhost:5002`
+
+3. Khởi chạy nhiều node
+-----------------------
+Có hai cách:
+
+**Cách A – chạy từng node (chi tiết):**
+
+```bash
+# Node 1
+node server.js --port=5001 --dataFile=node-data/node1.json --name=node-1
+
+# Node 2 (kết nối tới node 1)
+node server.js --port=5002 --dataFile=node-data/node2.json --name=node-2 --peers=http://localhost:5001
+
+# Node 3 (kết nối tới cả 2 node trên)
+node server.js --port=5003 --dataFile=node-data/node3.json --name=node-3 --peers=http://localhost:5001,http://localhost:5002
+```
+
+**Cách B – chạy cả 3 node bằng một lệnh:**
+
+```bash
+npm run start:all
+```
+
+Script `startNodes.js` sẽ spawn ba tiến trình song song (nhấn `Ctrl+C` để dừng tất cả). Có thể đặt biến môi trường `NODE_HOST` để thay `localhost`, ví dụ `NODE_HOST=192.168.1.10 npm run start:all`.
+
+Ghi chú chung:
+- Lần đầu chạy, file data sẽ được tạo tự động trong `backend/node-data/`.
+- Mỗi node log ra `Base URL`, `Node ID`, danh sách peers ban đầu.
+- Sau khi listen, node tự kết nối peers và đồng bộ chain dài nhất.
+
+4. Broadcast & đồng bộ block
+----------------------------
+- Khi node nhận request tạo block mới (`POST /api/record`), block được mine, lưu vào file riêng, sau đó broadcast tới toàn bộ peers qua endpoint `/p2p/block`.
+- Node nhận block:
+  1. Xác minh `previousHash`, `hash`, độ khó.
+  2. Nếu hợp lệ, thêm block vào chain và lưu file.
+  3. Nếu thiếu block hoặc previous hash lệch, node tự động yêu cầu đồng bộ (`/p2p/chain`).
+- Có thể chủ động yêu cầu đồng bộ bằng `POST /p2p/sync` trên bất kỳ node nào.
+
+5. Các endpoint P2P mới
+-----------------------
+- `GET /p2p/peers` : Xem danh sách peers hiện tại.
+- `POST /p2p/peers` : Đăng ký peer mới. Body có thể chứa `peer` (string) hoặc `peers` (array).
+- `POST /p2p/block` : Peer gửi block mới.
+- `GET /p2p/chain` : Lấy toàn bộ blockchain dạng plain JSON.
+- `POST /p2p/sync` : Yêu cầu đồng bộ với các peer đã biết.
+
+6. Frontend & API hiện tại
+--------------------------
+- Toàn bộ REST API hiện có (đăng nhập, thêm record, thống kê, lịch sử, Smart Contract, v.v.) vẫn hoạt động trên từng node.
+- Frontend (`frontend/dashboard.html`) chỉ cần đặt `API_URL` trỏ tới node mong muốn (ví dụ `http://localhost:5001`).
+- Có thể mở nhiều tab trình duyệt trỏ tới các node khác nhau để quan sát việc đồng bộ.
+
+7. Kịch bản kiểm thử nhanh
+---------------------------
+1. Khởi chạy 2 node (5001 và 5002) như ví dụ mục 3.
+2. Đăng nhập frontend trỏ vào node 5001, thêm một record (mine block mới).
+3. Quan sát log node 5001: `📡 Đã broadcast block ...` và node 5002 nhận block `✅ Đã nhận và thêm block ...`.
+4. Gọi `GET http://localhost:5002/api/blockchain/stats` để xác nhận block count tăng.
+5. Tắt node 5002, tạo thêm block trên node 5001, mở lại node 5002 -> trong log node 5002 sẽ đồng bộ chain dài hơn từ node 5001.
+
+8. Lưu ý vận hành
+------------------
+- Nếu chạy trên nhiều máy, cần thay `--host` hoặc `--baseUrl` để phản ánh địa chỉ IP truy cập thực tế.
+- Khi thay đổi độ khó (`--difficulty`), đảm bảo tất cả node cùng cấu hình để tránh reject block vì không đạt difficulty.
+- Nếu một node bị lệch chain, kiểm tra log `OUT_OF_SYNC` và dùng `POST /p2p/sync`.
+
+9. Chức năng cũ & dữ liệu mặc định
+----------------------------------
+- Toàn bộ nghiệp vụ cũ (JWT auth, Smart Contract validation, QR code, thống kê, WebSocket update) vẫn chạy trong từng node.
+- SQL Server không thay đổi schema; các node chia sẻ cùng DB nếu sử dụng chung thông tin kết nối.
+- Đầu vào/ra API giữ nguyên format, nên các client/ứng dụng hiện có không cần thay đổi.
+- `blockchain_data.json` **không còn được sử dụng**. Nếu không truyền `--dataFile`, server sẽ mặc định đọc/ghi `backend/node-data/default.json`.
+- Nếu đã có blockchain mẫu muốn dùng cho nhiều node, hãy copy dữ liệu dài nhất vào các file `backend/node-data/nodeX.json` tương ứng (hoặc `default.json` để làm mẫu cho node mới).
+
+10. Gỡ lỗi
+-----------
+- Dùng `GET /p2p/peers` để kiểm tra node đã biết những ai.
+- Dùng `GET /p2p/chain` để xem chain plain JSON khi nghi ngờ dữ liệu lệch.
+- Log server ghi rõ nguyên nhân nếu block từ peer bị từ chối (`HASH_MISMATCH`, `INVALID_DIFFICULTY`, ...).
+- Nếu không broadcast được, kiểm tra firewall/port hoặc log cảnh báo `⚠️ Lỗi gửi block tới ...`.
+
+==============================
+

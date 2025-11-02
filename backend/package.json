@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:all": "node startNodes.js"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
     "jsonwebtoken": "^9.0.2",
     "mssql": "^12.0.0",
     "multer": "^2.0.2",
+    "node-rsa": "^1.1.1",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.4",
     "socket.io": "^4.8.1"

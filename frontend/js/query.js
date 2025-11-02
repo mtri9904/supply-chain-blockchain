@@ -5,7 +5,7 @@
 document.getElementById('searchForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
-    const productId = document.getElementById('productId').value.trim();
+    const batchNumber = document.getElementById('batchNumber').value.trim();
     const resultDiv = document.getElementById('result');
     
     // Hiển thị loading
@@ -13,20 +13,23 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
     resultDiv.innerHTML = '<div class="loading">⏳ Đang tìm kiếm trên blockchain...</div>';
 
     try {
-        const response = await fetch(`${window.API_URL}/api/history/${productId}`);
+        const response = await fetch(`${window.API_URL}/api/history/${batchNumber}`);
         const data = await response.json();
 
         if (response.ok) {
             if (!data || data.length === 0) {
                 resultDiv.innerHTML = `
-                    <div class="result-title">Kết quả cho: ${productId}</div>
+                    <div class="result-title">Kết quả cho Batch: ${batchNumber}</div>
                     <div class="empty-message">
-                        ℹ️ Không tìm thấy lịch sử cho sản phẩm này.<br>
-                        Sản phẩm có thể chưa được ghi nhận trên blockchain.
+                        ℹ️ Không tìm thấy lịch sử cho batch này.<br>
+                        Batch có thể chưa được ghi nhận trên blockchain.
                     </div>
                 `;
             } else {
-                let html = `<div class="result-title">📦 Lịch sử sản phẩm: ${productId}</div>`;
+                let html = `<div class="result-title">📦 Lịch sử Batch: ${batchNumber}</div>`;
+                if (data[0].productName) {
+                    html = `<div class="result-title">📦 Sản phẩm: ${data[0].productName} | Batch: ${batchNumber}</div>`;
+                }
                 html += '<div class="timeline">';
                 
                 data.forEach((item, index) => {
@@ -35,8 +38,10 @@ document.getElementById('searchForm').addEventListener('submit', async (e) => {
                         <div class="timeline-item">
                             <div class="timeline-status">📍 ${item.status}</div>
                             <div class="timeline-info"><strong>🕒 Thời gian:</strong> ${timestamp}</div>
+                            <div class="timeline-info"><strong>📦 Tên sản phẩm:</strong> ${item.productName || '-'}</div>
+                            <div class="timeline-info"><strong>🏷️ Batch Number:</strong> ${item.batchNumber || '-'}</div>
                             <div class="timeline-info"><strong>📍 Vị trí:</strong> ${item.location}</div>
-                            <div class="timeline-info"><strong>👤 Thực hiện bởi:</strong> <code>${item.actor}</code></div>
+                            <div class="timeline-info"><strong>👤 Thực hiện bởi:</strong> <code>${item.actor}</code> (${item.role || 'N/A'})</div>
                         </div>
                     `;
                 });

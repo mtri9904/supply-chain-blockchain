@@ -1,0 +1,96 @@
+{
+  "chain": [
+    {
+      "index": 0,
+      "timestamp": 1761981547469,
+      "data": {
+        "uniqueId": "44563a1a-1873-4a5c-b749-59bfa6028a29",
+        "batchNumber": "BATCH-00999999846257-20251101",
+        "gtin": "99999919661",
+        "productName": "GENESIS",
+        "status": "Khởi tạo blockchain",
+        "location": "System",
+        "actor": "System"
+      },
+      "previousHash": "0",
+      "nonce": 83546,
+      "hash": "0000352ae5ad6a23db5e8ae01787a3c3e920c2e5c09531e78dafdd540eaaa913"
+    },
+    {
+      "index": 1,
+      "timestamp": 1761981629583,
+      "data": {
+        "uniqueId": "cb9f505c-b917-4f41-b06c-c5a36cf9c2d5",
+        "batchNumber": "BATCH-08671629583111-20251101",
+        "gtin": "8671629583111",
+        "productName": "Cà phê cức chồn",
+        "location": "Đak Lak",
+        "status": "Thu hoạch: 200kg, Loại: B",
+        "actor": "minhtri",
+        "timestamp": 1761981629583,
+        "role": "farmer",
+        "harvestDate": "2025-12-20",
+        "quantity": "200",
+        "quality": "B",
+        "notes": "Ngon",
+        "signature": "1527373ca37467d029af7577e44afca60d865339fccfd8b5c317e630786848394575922e1d6bb64c6b6a7f5056771389faae5a3e814f5ce647873502fdb80868b8df23c517e25eec0363c47127d31fd80220642e896ff0ffc866bd03db16a681436bf3cfdbc5efb299ede7e9ee967765322c56382557a181455478175668958dfd8a4cd975b9d3eed26e5823227283ac737ad7fcdfff7064ee7c15a2669a188f37012c8e55973b2805c15c621aba9e0e0b3b2b4917844028e4934422b838fc64a398dfc2c526062133ef20bf0c15ff2bcc01cba0e444da339ef61176430f81166beaddbcb286972d340b5d303055177a7dffaff80a893b9a46f676d6a6bc82e7",
+        "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkjUytlu+3CD1+E6DzJ2w\nriFfLd+jcbE6pS8b0l7TpwlS05ukRCrkRFRtuM8KSb6UfJzJMbwN0oEukPQcpkTf\nXjZq0nUpQhLvt/bUYGNtl1lKxX9a1je669UQG+e1j4Mn9YIbSA0TGq10TLh6yr3x\ndl1gGC6Ce75lUx18qTK6oOgTNR49jR5lo6Pu8LWLVG7ZLueq9pNbsaSryPKtB6ZJ\nsIwB0UpUYqT2l+cSimuEeF2sRC5wRJkjtq7nVIgai/TVyvAQ07/pwC35UBz+kJhM\nsJo7wj7d1E//LoE2r48hSHBUiRxmPh78LYPSFhkl71loL43OuC63CUy1qVQO46Y+\npwIDAQAB\n-----END PUBLIC KEY-----",
+        "signaturePayload": "{\"actor\":\"minhtri\",\"harvestDate\":\"2025-12-20\",\"location\":\"Đak Lak\",\"notes\":\"Ngon\",\"productName\":\"Cà phê cức chồn\",\"quality\":\"B\",\"quantity\":\"200\",\"role\":\"farmer\"}",
+        "qrCode": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAAGQCAYAAACAvzbMAAAAAklEQVR4AewaftIAAAxySURBVO3BwY0kOJIEQN9Aa8Ev9SSoJ7+UY29F4AUqkVM9Zvaf//5PAOD/qQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANDwJx8y5grv7tl5NebK3+ienRdjrnzCPTv8HmOu8O6enZ9WAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0/Mk/wD07f6MxV77pnp1XY678je7ZeTXmyifcs/PTxlx5dc/OqzFXXt2z81vcs/M3GnPlmyoA0FABgIYKADRUAKChAgANFQBoqABAQwUAGioA0FABgIY/+WXGXPmme3a+7Z6dF2OufMI9O6/GXHk15spPG3PlE+7Z+YQxV17cs/NqzJVPGHPlp92z821jrnzTPTu/RQUAGioA0FABgIYKADRUAKChAgANFQBoqABAQwUAGioA0PAn/DpjrnzTmCuv7tn5txtz5dU9O990z86rMVf4d6sAQEMFABoqANBQAYCGCgA0VACgoQIADRUAaKgAQMOf8Ovcs/PTxlz5hDFXfto9O58w5son3LPzTffsfMI9O/y7VQCgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACgoQIADX/yy9yzw5sxVz7hnp1XY668umfnp4258gn37Lwac+Wn3bPzasyVV/fs/Nvds8ObCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACg4U/+AcZc4d2YKy/u2Xk15spvMebKq3t2Xo258m337LwYc+XVPTuvxlx5dc/OqzFXXtyz8wljrvDzKgDQUAGAhgoANFQAoKECAA0VAGioAEBDBQAaKgDQUAGAhj/5kHt2+K4xV77tnp1XY668uGfn1ZgrvLtn57e4Z4fvqgBAQwUAGioA0FABgIYKADRUAKChAgANFQBoqABAQwUAGv7z3//JB4y58uqenVdjrvy0e3ZejbnybffsvBhz5dvu2fmmMVe+7Z6dV2OuvLhn5xPGXPmEe3Z+2pgrr+7Z+YQxV17cs/NqzJVPuGfnp1UAoKECAA0VAGioAEBDBQAaKgDQUAGAhgoANFQAoOFPPuSend9izJVX9+x8wpgrv8U9O6/GXPlp9+y8umfnE8ZceTXmyqt7dn7amCuv7tl5NebKTxtz5dvGXPlpY658wj0731QBgIYKADRUAKChAgANFQBoqABAQwUAGioA0FABgIYKADT8yYeMufLqnp1PuGfnm8ZceXXPzqsxV17cs/MJY678FmOufMI9O6/GXPlpY668umfn28Zc+Wn37Lwac+Wb7tl5NebKb1EBgIYKADRUAKChAgANFQBoqABAQwUAGioA0FABgIYKADT8yT/AmCt/o3t2PuGenW+6Z+fVmCuv7tn5LcZceXXPzqsxV17cs/MJY668umfnp425wu9RAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0/Mk/wD07r8Zc+aYxVz7hnp1XY678Fvfs/LQxV77tnp1PuGfnm+7Z+aZ7dj7hnp1PGHPlm8ZceXXPzk+rAEBDBQAaKgDQUAGAhgoANFQAoKECAA0VAGioAEBDBQAa/uQfYMyVV/fs/LQxV17ds8O7MVde3bPz0+7Z+YQxV17ds/NqzJUX9+x8wpgrr+7ZeTXmyot7dnh3z843VQCgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACg4U8+5J6dbxtz5cU9O6/GXPmEe3a+6Z6dbxtz5cU9O992z84n3LPzYsyVV/fsfNs9Oy/GXHl1z84njLnyTffs/BYVAGioAEBDBQAaKgDQUAGAhgoANFQAoKECAA0VAGioAEDDn3zImCuv7tn5hHt2Xoy58uqenb/RmCufcM/ON4258uqenU8Yc+Wbxlx5dc/OqzFXXt2z8+KenVdjrvBdFQBoqABAQwUAGioA0FABgIYKADRUAKChAgANFQBoqABAw5/8A4y58gn37Ly4Z+fVmCufcM/OT7tn59WYK6/u2fmEe3ZejLny6p6db7tn59WYK7/FPTuvxlx5cc/OJ9yz82rMlVf37PybVQCgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACgoQIADX/yIffsvBpz5ZvGXPmEe3Zejbny6p6dbxpz5Zvu2Xk15son3LPzasyVV/fs/I3u2Xkx5sqre3Zejbny6p6dV2OuvLhn5xPGXHl1z85PqwBAQwUAGioA0FABgIYKADRUAKChAgANFQBoqABAQwUAGv7kQ8Zc+YR7dl6NufLinp1XY668GnPlE8ZceXHPzifcs/MJY668GHOFd2OufNs9Oy/u2Xk15sqre3Zejbny6p6dF2Ou/I0qANBQAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGP/mQe3a+7Z6dn3bPzieMufI3GnPl1T07P23MlVf37Lwac+Wbxlz5hHt2Xo258tPGXHl1z86rMVde3bPz0+7ZeTXmym9RAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCG//z3f/KLjLny0+7ZeTXmyr/dPTvfNObKt92z801jrry6Z+fVmCuv7tl5NebKi3t2vm3Mld/inp1vqgBAQwUAGioA0FABgIYKADRUAKChAgANFQBoqABAQwUAGv7kQ8ZceXXPzt/onp1PGHPlp92z821jrvwWY668umfn1ZgrL+7Z+YR7dl6NufLTxlx5dc/OqzFXvumenU8Yc+XVPTs/rQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACgoQIADRUAaPjPf/8nv8iYK/929+z8tDFXPuGenZ825son3LPzNxpz5dU9O6/GXPkt7tn5pjFXvu2enZ9WAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0/Mk/wJgrf6N7dj5hzJUX9+y8umeHd2Ou/Bb37HzCPTs/bcyVTxhz5Zvu2Xk15sqre3a+qQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACgoQIADRUAaPiTDxlz5dU9O6/GXHl1z843jbnyCffs/BZjrnzTPTuvxlx5dc/OqzFXXt2z82LMlVdjrry6Z+fVmCv/dvfsvBhz5W9UAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCG//z3f8KvMubKi3t2vm3MlVf37Py0MVc+4Z6dTxhz5cU9O6/GXPmEe3Zejbny4p6dbxtz5afds/MJY668umfnp1UAoKECAA0VAGioAEBDBQAaKgDQUAGAhgoANFQAoKECAA1/8iFjrvDunp1vGnPlE+7Z+aZ7dj5hzJVPuGfnxZgrr+7ZeTXmyqsxV75pzJVX9+x8wj07P23MlVf37HxTBQAaKgDQUAGAhgoANFQAoKECAA0VAGioAEBDBQAaKgDQ8Cf/APfs/I3GXPkt7tl5NebKJ4y58uKenb/VmCs/bcyVV/fsfMKYKz/tnp3fYsyVv1EFABoqANBQAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANDwJ7/MmCvfdM/Ot92z82LMlVf37Ly6Z+fVmCs/bcyVV/fsvBpz5dvu2Xkx5sqre3Z+izFXfpMxV37aPTuvxlx5dc/OT6sAQEMFABoqANBQAYCGCgA0VACgoQIADRUAaKgAQEMFABr+hF9nzJWfNubKJ9yz82rMlRf37HzbPTu/xZgrr+7ZeTXmyk+7Z+fbxlz5affsvBpz5dU9O99UAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGP4H/uWfn1Zgrn3DPzk8bc+UTxlz5hHt2Xtyz82rMlW+7Z+fFmCuv7tn5LcZceXXPzm9RAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0/Mkvc8/Ov909Oz9tzJVPGHPl1T07P+2enW8bc+Wnjbny6p6d3+KenW+7Z+fVmCvfNObKq3t2floFABoqANBQAYCGCgA0VACgoQIADRUAaKgAQEMFABoqANDwJ/8AY67wbsyVF/fsfNs9O6/GXPlp9+x82z07r8ZceXHPzieMufLqnp1XY668uGfn28Zc+S3u2fmmCgA0VACgoQIADRUAaKgAQEMFABoqANBQAYCGCgA0VACg4T///Z8AwP9TBQAaKgDQUAGAhgoANFQAoKECAA0VAGioAEBDBQAaKgDQUAGAhgoANFQAoKECAA0VAGioAEBDBQAaKgDQUAGAhgoANPwfiqUDghcaLtoAAAAASUVORK5CYII="
+      },
+      "previousHash": "0000352ae5ad6a23db5e8ae01787a3c3e920c2e5c09531e78dafdd540eaaa913",
+      "nonce": 4719,
+      "hash": "00000d28768ec5ae91f1705842e17140448398a8b3fc4b5ad88f5f45b4243dd7"
+    },
+    {
+      "index": 2,
+      "timestamp": 1761981737806,
+      "data": {
+        "uniqueId": "5474c235-5fce-43fe-bf93-5e5916618e81",
+        "batchNumber": "BATCH-08671629583111-20251101",
+        "gtin": "8671737805111",
+        "productName": "Cà phê cức chồn",
+        "location": "Đà Lạt",
+        "status": "pickup",
+        "actor": "minhtri2",
+        "timestamp": 1761981737805,
+        "role": "shipper",
+        "fromLocation": "q1",
+        "toLocation": "q2",
+        "temperature": "20",
+        "signature": "220b907e0263d8a4bb826f6ab55e7ab60fa5efc295b1b1de503f36da1016bd35cee2ac349c8477f90c10a2e1d1694cbac06edc7a2d65fbf3673dd292ee44db88a765cb4e47b6636dcd70d6ca6c25c96dbaee680119b2ddc4cbd2b2731337d5e484e3063de0cfcad8fa66504f19537c8baa48953568cedf18c0e52431e571de331d16486c72f98d0d22b1cd42926c278f097c6b079d001f6e288f678e30c9b2de5be8b2fc7be9eb4d84c474cf407c7032cd3b7443bc9fc9eadb5a0dd8988cd95b0e634681374078e73bc4178a78e586626576a8af89d0b279a752486ebc5adf4e92436ad18e3ffc9de939f91141e986ddecb801f2f8a772c26afd36f679dc00a7",
+        "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAokePBFtwmOfmYOoKlOVc\n65QCkL8yZFNK+FQK48zu+F6wo16rLxta/tRvIjbgU0A2bx1ynCmtJ1ruKetNXhKU\n4V+XfXXc0FZnLtYpp7BmSItDCl60GxRJsp81FmJirZhh1KGyinKHrdsXNs5GbVLW\nUhfWWhKD3gTRm5iOae/gyq+8DzU0WSy4wSVYEaaTqrOUxJ07saDEawS2LRTT2Vc6\nV6iT5ftCCMxp6mTARFL/Fr3vVEAGDZTySdVF4sGBqqHiOg+0232/R0ZIxQIA0f/t\nbP6aS2PWX/dDw5BFav2EXt0qdQLCRxheZNk0jGJwg/8Wq2Wkrj/6jKl5UWp2cbuG\nEwIDAQAB\n-----END PUBLIC KEY-----",
+        "signaturePayload": "{\"actor\":\"minhtri2\",\"batchNumber\":\"BATCH-08671629583111-20251101\",\"fromLocation\":\"q1\",\"location\":\"Đà Lạt\",\"role\":\"shipper\",\"status\":\"pickup\",\"temperature\":\"20\",\"toLocation\":\"q2\"}"
+      },
+      "previousHash": "00000d28768ec5ae91f1705842e17140448398a8b3fc4b5ad88f5f45b4243dd7",
+      "nonce": 46134,
+      "hash": "00006c331caba759e77c52943d23ba13b70fea31498d72360096ed3b934ad5a7"
+    },
+    {
+      "index": 3,
+      "timestamp": 1761981783842,
+      "data": {
+        "uniqueId": "d95e6c74-57c5-476c-9d7b-f411db2d7818",
+        "batchNumber": "BATCH-08671629583111-20251101",
+        "gtin": "8671783842111",
+        "productName": "Cà phê cức chồn",
+        "location": "q2",
+        "status": "intransit",
+        "actor": "minhtri2",
+        "timestamp": 1761981783842,
+        "role": "shipper",
+        "fromLocation": "q1",
+        "toLocation": "q2",
+        "signature": "2d8660d5f6ff3406233579252108c8bd7d5fd2e55c6a12d100256e82925467dbf9e87ebce1b6723ad2685fce0f6753cef6dc3ccc255725f7b801692743f6cc5730d2f3068c29387f738976c78cfbb8db0338fa587ae609d9528dbf3d756db65ffa989dc646ac8a6774719b01b6450a29e6376456818bd868c99decaaf564dde45a693eb47695a453c9361927f629700ff3f82f4a984af09c8d4f432fe5bf89e4a8756144310f1d67541838d70f5e8ff5a343c1cd249c77ee16f3eb27faf921f4776712504e67724665901ecd9424f24299ccf6e2c0e51ccf17b0121d20c093e5e1aac4e78c223028653be64f764a26e03b9a3b8b57f0fd012da755d0b40bb321",
+        "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAokePBFtwmOfmYOoKlOVc\n65QCkL8yZFNK+FQK48zu+F6wo16rLxta/tRvIjbgU0A2bx1ynCmtJ1ruKetNXhKU\n4V+XfXXc0FZnLtYpp7BmSItDCl60GxRJsp81FmJirZhh1KGyinKHrdsXNs5GbVLW\nUhfWWhKD3gTRm5iOae/gyq+8DzU0WSy4wSVYEaaTqrOUxJ07saDEawS2LRTT2Vc6\nV6iT5ftCCMxp6mTARFL/Fr3vVEAGDZTySdVF4sGBqqHiOg+0232/R0ZIxQIA0f/t\nbP6aS2PWX/dDw5BFav2EXt0qdQLCRxheZNk0jGJwg/8Wq2Wkrj/6jKl5UWp2cbuG\nEwIDAQAB\n-----END PUBLIC KEY-----",
+        "signaturePayload": "{\"actor\":\"minhtri2\",\"batchNumber\":\"BATCH-08671629583111-20251101\",\"fromLocation\":\"q1\",\"location\":\"q2\",\"role\":\"shipper\",\"status\":\"intransit\",\"toLocation\":\"q2\"}"
+      },
+      "previousHash": "00006c331caba759e77c52943d23ba13b70fea31498d72360096ed3b934ad5a7",
+      "nonce": 122186,
+      "hash": "00007caa596b159cc5bc940d24b2bacc7538910b3ea95771770be8f58d5fded5"
+    }
+  ],
+  "pendingTransactions": [],
+  "difficulty": 4,
+  "lastUpdated": "2025-11-01T07:23:04.751Z"
+}

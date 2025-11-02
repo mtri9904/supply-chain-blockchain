@@ -3,167 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - Blockchain Explorer</title>
+    <title>Admin - Blockchain Explorer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root { --primary: #1a237e; --shadow: 0 4px 12px rgba(0,0,0,0.08); --radius: 12px; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #f5f5f5;
-            padding: 20px;
+        body {
+            font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e3f2fd 100%);
+            padding: 20px; min-height: 100vh;
         }
+        .container { max-width: 1200px; margin: 0 auto; }
         .navbar {
-            background: #1a237e;
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            background: var(--primary); color: white; padding: 20px; border-radius: var(--radius);
+            margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;
         }
-        .navbar h1 { font-size: 24px; }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .navbar h1 { font-size: 1.6rem; font-weight: 600; }
+        #totalBlocks { background: #e8eaf6; padding: 8px 16px; border-radius: 8px; font-weight: 600; }
+        .btn { padding: 10px 20px; background: #4caf50; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
         .block {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            position: relative;
+            background: white; padding: 20px; border-radius: var(--radius); margin-bottom: 20px;
+            box-shadow: var(--shadow); position: relative;
         }
-        .block:not(:last-child)::after {
-            content: '↓';
-            position: absolute;
-            bottom: -20px;
-            left: 50%;
-            font-size: 20px;
-            color: #1a237e;
+        .block::after {
+            content: '↓'; position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%);
+            font-size: 1.5rem; color: var(--primary);
         }
-        .block-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .block-index {
-            font-size: 18px;
-            font-weight: bold;
-            color: #1a237e;
-        }
-        .block-timestamp {
-            color: #666;
-        }
-        .hash-section {
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-            font-family: monospace;
-            word-break: break-all;
-        }
-        .hash-label {
-            color: #666;
-            font-size: 12px;
-            margin-bottom: 5px;
-        }
-        .data-section {
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 5px;
-            margin-top: 15px;
-        }
-        .data-item {
-            margin: 5px 0;
-        }
-        .data-item strong {
-            color: #1a237e;
-        }
-        .refresh-btn {
-            background: #4caf50;
-            color: white;
-            border: none;
-            padding: 8px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .refresh-btn:hover {
-            background: #43a047;
-        }
-        .genesis {
-            background: #fff8e1;
-        }
-        #totalBlocks {
-            background: #e8eaf6;
-            padding: 10px 20px;
-            border-radius: 5px;
-            margin-left: 20px;
-            font-weight: bold;
-        }
+        .block:last-child::after { display: none; }
+        .genesis { border: 2px solid #ffeb3b; background: #fffde7; }
+        .block-header { display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+        .block-index { font-weight: 600; color: var(--primary); }
+        .hash-section { background: #f8f9fa; padding: 10px; border-radius: 8px; margin: 10px 0; font-family: monospace; font-size: 0.9rem; word-break: break-all; }
+        .data-section { background: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 15px; }
+        .data-item { margin: 6px 0; }
+        .data-item strong { color: var(--primary); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="navbar">
             <div>
-                <h1>🔍 Blockchain Explorer</h1>
+                <h1>Blockchain Explorer</h1>
                 <div id="totalBlocks">Tổng số block: Loading...</div>
             </div>
-            <button onclick="loadBlockchain()" class="refresh-btn">🔄 Làm mới</button>
+            <button class="btn" onclick="loadBlockchain()">Làm mới</button>
         </div>
         <div id="blockchain"></div>
     </div>
 
-    <!-- Auto-detect API URL -->
     <script src="js/config.js"></script>
-    
     <script>
-        // API_URL will be set by config.js
-
         async function loadBlockchain() {
             try {
                 const response = await fetch(`${window.API_URL}/api/full-chain`);
                 const chain = await response.json();
-                
-                const blockchainDiv = document.getElementById('blockchain');
                 document.getElementById('totalBlocks').textContent = `Tổng số block: ${chain.length}`;
-                
-                blockchainDiv.innerHTML = chain.map((block, index) => `
-                    <div class="block ${index === 0 ? 'genesis' : ''}">
+                const html = chain.map((block, i) => `
+                    <div class="block ${i === 0 ? 'genesis' : ''}">
                         <div class="block-header">
-                            <span class="block-index">Block #${index} ${index === 0 ? '(Genesis Block)' : ''}</span>
-                            <span class="block-timestamp">${new Date(block.timestamp).toLocaleString('vi-VN')}</span>
+                            <span class="block-index">Block #${i} ${i === 0 ? '(Genesis)' : ''}</span>
+                            <span>${new Date(block.timestamp).toLocaleString('vi-VN')}</span>
                         </div>
-                        
-                        <div class="hash-section">
-                            <div class="hash-label">📝 Block Hash:</div>
-                            ${block.hash}
-                        </div>
-                        
-                        <div class="hash-section">
-                            <div class="hash-label">↩️ Previous Hash:</div>
-                            ${block.previousHash}
-                        </div>
-                        
+                        <div class="hash-section">Hash: ${block.hash}</div>
+                        <div class="hash-section">Prev: ${block.previousHash}</div>
                         <div class="data-section">
-                            <div class="data-item"><strong>Mã sản phẩm:</strong> ${block.data.productId}</div>
+                            <div class="data-item"><strong>Sản phẩm:</strong> ${block.data.productName || '-'}</div>
+                            <div class="data-item"><strong>Batch:</strong> ${block.data.batchNumber || '-'}</div>
                             <div class="data-item"><strong>Trạng thái:</strong> ${block.data.status}</div>
                             <div class="data-item"><strong>Vị trí:</strong> ${block.data.location}</div>
                             <div class="data-item"><strong>Người thực hiện:</strong> ${block.data.actor}</div>
                         </div>
                     </div>
                 `).join('');
+                document.getElementById('blockchain').innerHTML = html;
             } catch (error) {
-                console.error('Lỗi:', error);
-                alert('❌ Không thể tải dữ liệu blockchain. Hãy đảm bảo server đang chạy.');
+                alert('Lỗi tải blockchain');
             }
         }
-
-        // Tải dữ liệu khi trang web được mở
         loadBlockchain();
     </script>
 </body>

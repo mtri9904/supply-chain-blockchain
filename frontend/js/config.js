@@ -3,111 +3,139 @@
 
 class APIConfig {
     constructor() {
-        this.apiUrl = this.detectAPIUrl();
-        console.log('🌐 Detected API URL:', this.apiUrl);
+        this.KEY_STORAGE = 'scb_custom_api_url';
+        this.candidates = this.buildCandidateList();
+        this.apiUrl = this.candidates[0];
+        console.log('🌐 API candidates:', this.candidates);
+        this.ensureConnection();
     }
 
-    detectAPIUrl() {
-        // Method 1: Try to detect from current hostname
+    buildCandidateList() {
+        const list = [];
+        const params = new URLSearchParams(window.location.search);
+        const queryApi = params.get('api');
+        if (queryApi) {
+            list.push(queryApi.trim());
+        }
+
+        const stored = localStorage.getItem(this.KEY_STORAGE);
+        if (stored) {
+            list.push(stored.trim());
+        }
+
         const hostname = window.location.hostname;
-        
-        // If running on localhost or 127.0.0.1, use localhost
-        if (hostname === 'localhost' || hostname === '127.0.0.1') {
-            return 'http://localhost:5000';
+        const defaultPorts = ['5000', '5001', '5002', '5003'];
+        if (hostname) {
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                defaultPorts.forEach(port => list.push(`http://${hostname}:${port}`));
+            } else if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+                defaultPorts.forEach(port => list.push(`http://${hostname}:${port}`));
+            } else {
+                list.push(`https://${hostname}`);
+                list.push(`http://${hostname}:5000`);
+            }
         }
-        
-        // If running on a specific IP (like 172.16.16.65), use that IP
-        if (hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-            return `http://${hostname}:5000`;
-        }
-        
-        // Method 2: Try to detect from network interfaces (if available)
-        // This is a fallback method
-        const possibleIPs = [
-            '172.16.16.65',  // Common WiFi IP range
-            '192.168.1.100', // Common home network
-            '192.168.0.100', // Another common range
-            '10.0.0.100'     // Corporate network
+
+        const fallbackIPs = [
+            '172.16.16.65',
+            '192.168.100.107',
+            '192.168.1.100',
+            '192.168.0.100',
+            '10.0.0.100'
         ];
-        
-        // For now, try the first possible IP
-        // In a real implementation, you could ping these IPs to see which one responds
-        return `http://${possibleIPs[0]}:5000`;
+        fallbackIPs.forEach(ip => {
+            defaultPorts.forEach(port => list.push(`http://${ip}:${port}`));
+        });
+
+        const unique = Array.from(new Set(list.filter(Boolean)));
+        return unique.length > 0 ? unique : ['http://localhost:5000'];
     }
 
-    // Method to test API connectivity
-    async testConnection() {
-        try {
-            const response = await fetch(`${this.apiUrl}/api/blockchain/stats`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            if (response.ok) {
-                console.log('✅ API connection successful');
-                return true;
-            } else {
-                console.log('❌ API connection failed:', response.status);
-                return false;
+    async ensureConnection() {
+        for (const candidate of this.candidates) {
+            if (await this.testConnection(candidate)) {
+                this.setAPIUrl(candidate, { silent: true });
+                console.log('✅ Using API URL:', candidate);
+                return candidate;
             }
+        }
+
+        console.warn('⚠️ Không tìm thấy API hoạt động. Sử dụng URL đầu tiên:', this.candidates[0]);
+        this.setAPIUrl(this.candidates[0], { silent: true, notifyFailure: true });
+        return null;
+    }
+
+    async testConnection(url) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const response = await fetch(`${url}/api/blockchain/stats`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+            return response.ok;
         } catch (error) {
-            console.log('❌ API connection error:', error.message);
             return false;
         }
     }
 
-    // Method to get the API URL
     getAPIUrl() {
         return this.apiUrl;
     }
 
-    // Method to update API URL (for manual configuration)
-    setAPIUrl(newUrl) {
+    setAPIUrl(newUrl, { persist = true, silent = false, notifyFailure = false } = {}) {
+        if (!newUrl) return;
         this.apiUrl = newUrl;
-        console.log('🔧 API URL updated to:', this.apiUrl);
+        window.API_URL = newUrl;
+        if (persist) {
+            localStorage.setItem(this.KEY_STORAGE, newUrl);
+        }
+        if (!silent) {
+            console.log('🔧 API URL updated to:', newUrl);
+        }
+        if (notifyFailure) {
+            this.showWarning('⚠️ Không thể tự động kết nối API. Đang dùng cấu hình mặc định: ' + newUrl);
+        }
+    }
+
+    resetStoredUrl() {
+        localStorage.removeItem(this.KEY_STORAGE);
+    }
+
+    showWarning(message) {
+        if (!document.body) return;
+        const warningDiv = document.createElement('div');
+        warningDiv.style.cssText = `
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #ff9800;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 9999;
+            font-family: Arial, sans-serif;
+        `;
+        warningDiv.innerHTML = message;
+        document.body.appendChild(warningDiv);
+        setTimeout(() => {
+            if (warningDiv.parentNode) {
+                warningDiv.parentNode.removeChild(warningDiv);
+            }
+        }, 6000);
     }
 }
 
-// Create global instance
 window.apiConfig = new APIConfig();
+window.API_URL = window.apiConfig.getAPIUrl();
 
-// Export for use in other files
-const API_URL = window.apiConfig.getAPIUrl();
-
-// Make API_URL available globally immediately
-window.API_URL = API_URL;
-
-// Test connection on load
-window.apiConfig.testConnection().then(success => {
-    if (!success) {
-        console.warn('⚠️ API connection test failed. You may need to update the API URL.');
-        // Show user-friendly message
-        if (document.body) {
-            const warningDiv = document.createElement('div');
-            warningDiv.style.cssText = `
-                position: fixed;
-                top: 10px;
-                right: 10px;
-                background: #ff9800;
-                color: white;
-                padding: 10px;
-                border-radius: 5px;
-                z-index: 9999;
-                font-family: Arial, sans-serif;
-            `;
-            warningDiv.innerHTML = '⚠️ Không thể kết nối API. Vui lòng kiểm tra server.';
-            document.body.appendChild(warningDiv);
-            
-            // Auto-hide after 5 seconds
-            setTimeout(() => {
-                if (warningDiv.parentNode) {
-                    warningDiv.parentNode.removeChild(warningDiv);
-                }
-            }, 5000);
-        }
+window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const queryApi = params.get('api');
+    if (queryApi) {
+        console.log('🔗 API URL overridden by query param:', queryApi);
+        window.apiConfig.setAPIUrl(queryApi);
     }
 });
-
-// API_URL is already set above
