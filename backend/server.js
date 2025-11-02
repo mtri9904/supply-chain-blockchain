@@ -6,10 +6,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const QRCode = require('qrcode');
-const blockchain = require('./MyBlockchain');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const path = require('path');
 const fs = require('fs');
 const { Blockchain } = require('./MyBlockchain');
@@ -92,23 +88,18 @@ const INITIAL_PEERS = peersInput ? peersInput.split(',').map(p => p.trim()).filt
 // Cấu hình CORS chi tiết (cho phép cả localhost và IP)
 const corsOptions = {
     origin: [
-        'http://localhost:5173',  // ⭐ THÊM PORT NÀY - Frontend đang chạy trên 5173
-        'http://127.0.0.1:5173',  // ⭐ THÊM PORT NÀY
         'http://localhost:5500', 
         'http://127.0.0.1:5500', 
         'http://localhost:3000',
-        `http://${wifiIP}:5173`,
         `http://${wifiIP}:5500`,  // IP WiFi tự động phát hiện (frontend)
         `http://${wifiIP}:${PORT}`,  // Backend động
         `http://${wifiIP}:5500/supply-chain-blockchain/frontend`,  // Full path frontend
-        'http://172.16.16.65:5173',
         `http://localhost:${PORT}`,
         NODE_BASE_URL,
         'http://172.16.16.65:5500',  // IP cũ (backup)
         `http://172.16.16.65:${PORT}`,  // IP cũ backend (backup)
         'http://172.16.16.65:5500/supply-chain-blockchain/frontend',  // Full path cũ
         // Thêm các IP động từ biến môi trường
-        process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:5173` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.SERVER_PORT || '5500'}` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.BACKEND_PORT || PORT}` : null,
         process.env.SERVER_IP ? `http://${process.env.SERVER_IP}:${process.env.SERVER_PORT || '5500'}/supply-chain-blockchain/frontend` : null
@@ -118,220 +109,25 @@ const corsOptions = {
     credentials: true
 };
 
-// Cấu hình multer để lưu ảnh
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        const uploadDir = path.join(__dirname, 'uploads');
-        // Tạo thư mục nếu chưa tồn tại
-        if (!fs.existsSync(uploadDir)) {
-            fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        cb(null, uploadDir);
-    },
-    filename: function (req, file, cb) {
-        // Tạo tên file unique: timestamp + random + extension
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, 'image-' + uniqueSuffix + ext);
-    }
-});
+// Hàm để log chi tiết request
+const logRequest = (req) => {
+    console.log(`
+🔍 Request Details:
+- URL: ${req.method} ${req.url}
+- Headers: ${JSON.stringify(req.headers)}
+- Body: ${JSON.stringify(req.body)}
+- Query: ${JSON.stringify(req.query)}
+- Params: ${JSON.stringify(req.params)}
+`);
+};
 
-const upload = multer({ 
-    storage: storage,
-    limits: {
-        fileSize: 5 * 1024 * 1024 // 5MB limit
-    },
-    fileFilter: function (req, file, cb) {
-        // Chỉ chấp nhận file ảnh
-        if (file.mimetype.startsWith('image/')) {
-            cb(null, true);
-        } else {
-            cb(new Error('Chỉ chấp nhận file ảnh!'), false);
-        }
-    }
-});
-
-// Tạo thư mục uploads nếu chưa tồn tại
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-// Middleware
 const app = express();
-app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
-
-// Route gốc
-app.get('/', (req, res) => {
-  res.json({ message: 'Supply Chain Blockchain API' });
-});
-
-// Thêm route test - ĐẶT TRƯỚC app.use('/api', recordEventRoutes);
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK',
-    message: 'Backend server is running!',
-    timestamp: new Date().toISOString(),
-    port: 5000
-  });
-});
-// THÊM VÀO server.js
-app.get('/api/stats', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Server is running',
-        timestamp: new Date().toISOString(),
-        version: '1.0.0'
-    });
-});
-// Thêm vào server.js
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    status: 'success', 
-    message: 'Test API is working!',
-    timestamp: new Date().toISOString()
-  });
-});
-// 🧩 API TEST: Ghi sự kiện vào blockchain trực tiếp
-app.post('/api/record-event', (req, res) => {
-  try {
-    const eventData = req.body;
-
-    if (!eventData.productId || !eventData.eventType) {
-      return res.status(400).json({
-        success: false,
-        message: 'Thiếu thông tin productId hoặc eventType'
-      });
-    }
-
-    // 🔍 Log dữ liệu nhận được
-    console.log('📝 Event data to add to blockchain (FULL):', {
-      productId: eventData.productId,
-      eventType: eventData.eventType,
-      imageUrl: eventData.imageUrl,
-      allData: eventData
-    });
-
-    // ⚙️ Ghi vào blockchain
-    const result = blockchain.addTransactionEvent(eventData);
-
-    // 🔗 Log kết quả
-    console.log('🔗 Blockchain result:', {
-      success: result.success,
-      eventData: result.eventData,
-      imageUrlInBlockchain: result.eventData?.imageUrl
-    });
-
-    res.json({
-      success: true,
-      message: 'Đã ghi sự kiện vào blockchain thành công',
-      data: result
-    });
-
-  } catch (error) {
-    console.error('❌ Lỗi khi ghi sự kiện vào blockchain:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Lỗi máy chủ khi ghi sự kiện vào blockchain',
-      error: error.message
-    });
-  }
-});
-
-// 📌 TEST ENDPOINT UPLOAD
-app.get('/api/test-upload', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Upload endpoint is ready',
-        uploadsDir: uploadsDir,
-        uploadsExists: fs.existsSync(uploadsDir)
-    });
-});
-
-// API upload ảnh - ĐÃ CÓ NHƯNG CẦN ĐẢM BẢO HOẠT ĐỘNG
-app.post('/api/upload-image', upload.single('image'), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                message: 'Không có file ảnh được upload'
-            });
-        }
-
-        console.log('📸 Ảnh đã được upload:', {
-            filename: req.file.filename,
-            originalname: req.file.originalname,
-            size: req.file.size,
-            mimetype: req.file.mimetype
-        });
-
-        // Tạo URL để truy cập ảnh
-        const imageUrl = `/uploads/${req.file.filename}`;
-        
-        res.json({
-            success: true,
-            message: 'Upload ảnh thành công!',
-            imageUrl: imageUrl,
-            filename: req.file.filename,
-            originalName: req.file.originalname
-        });
-
-    } catch (error) {
-        console.error('❌ Lỗi upload ảnh:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Lỗi upload ảnh',
-            error: error.message
-        });
-    }
-});
-// 📌 ROUTE PHỤC VỤ FILE ẢNH TĨNH
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-// THÊM: Xử lý lỗi Multer cụ thể
-app.use((error, req, res, next) => {
-    if (error instanceof multer.MulterError) {
-        if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({
-                success: false,
-                message: 'File quá lớn',
-                details: 'Kích thước file tối đa là 5MB'
-            });
-        }
-        if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-            return res.status(400).json({
-                success: false,
-                message: 'Field không đúng',
-                details: 'Field name phải là "image"'
-            });
-        }
-    }
-    next(error);
-});
-// // Hàm để log chi tiết request
-// const logRequest = (req) => {
-//     console.log(`
-// 🔍 Request Details:
-// - URL: ${req.method} ${req.url}
-// - Headers: ${JSON.stringify(req.headers)}
-// - Body: ${JSON.stringify(req.body)}
-// - Query: ${JSON.stringify(req.query)}
-// - Params: ${JSON.stringify(req.params)}
-// `);
-// };
-
-
-
 const httpServer = http.createServer(app);
-// Import routes
-const recordEventRoutes = require('./routes/recordEvent');
-// Use routes
-app.use('/api', recordEventRoutes);
+
 // Thiết lập Socket.IO với CORS
 const io = new Server(httpServer, {
     cors: corsOptions
 });
-
 
 // Biến global để truy cập io từ các routes
 global.io = io;
@@ -364,16 +160,19 @@ app.use((req, res, next) => {
     next();
 });
 
+app.use(cors(corsOptions));
 
 // Custom response handler
-// app.use((req, res, next) => {
-//     const originalJson = res.json;
-//     res.json = function(data) {
-//         console.log(`\n📤 Response for ${req.method} ${req.url}:`, data);
-//         return originalJson.call(this, data);
-//     };
-//     next();
-// });
+app.use((req, res, next) => {
+    const originalJson = res.json;
+    res.json = function(data) {
+        console.log(`\n📤 Response for ${req.method} ${req.url}:`, data);
+        return originalJson.call(this, data);
+    };
+    next();
+});
+
+app.use(express.json());
 
 // Middleware xử lý lỗi JSON parsing
 app.use((err, req, res, next) => {
@@ -388,8 +187,6 @@ app.use((err, req, res, next) => {
 
 // Khởi tạo blockchain với difficulty = 4 (4 chữ số 0 đầu tiên)
 // Có thể thay đổi difficulty: 2 = dễ (vài giây), 4 = trung bình (10-30s), 5 = khó (1-2 phút)
-const supplyChain = blockchain;
-console.log('✅ Blockchain đã khởi tạo với Proof of Work (difficulty = 4)');
 const supplyChain = new Blockchain({
     difficulty: BLOCKCHAIN_DIFFICULTY,
     dataFile: DATA_FILE,
@@ -1498,53 +1295,7 @@ app.get('/product/:batchNumber', async (req, res) => {
         `;
 
         res.send(html);
-
     } catch (error) {
-        console.error('❌ Lỗi hiển thị giao diện sản phẩm:', error);
-        res.status(500).send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Lỗi</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                    body { 
-                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        min-height: 100vh;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        padding: 20px;
-                    }
-                    .error { 
-                        background: white;
-                        padding: 40px;
-                        border-radius: 15px;
-                        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-                        text-align: center;
-                        max-width: 500px;
-                        width: 100%;
-                    }
-                    .error h1 { 
-                        color: #d32f2f; 
-                        margin-bottom: 15px;
-                    }
-                    .error p { 
-                        color: #666;
-                        line-height: 1.5;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="error">
-                    <h1>❌ Có lỗi xảy ra</h1>
-                    <p>${error.message}</p>
-                </div>
-            </body>
-            </html>
-        `);
         console.error('Lỗi render trang QR:', error);
         res.status(500).send(`<h1 style="text-align:center;color:#d32f2f;">Lỗi hệ thống</h1>`);
     }
@@ -1557,36 +1308,10 @@ app.get('/api/qrcode/:batchNumber', async (req, res) => {
         if (!batchNumber) {
             return res.status(400).json({ success: false, message: 'Thiếu batch number' });
         }
-
-        console.log(`🔍 Kiểm tra sản phẩm: ${productId}`);
-        
-        const history = supplyChain.getProduct(productId);
-        
         const history = supplyChain.getProduct(batchNumber);
         if (!history || history.length === 0) {
             return res.status(404).json({ success: false, message: `Batch '${batchNumber}' không tồn tại trong blockchain` });
         }
-
-        const serverIP = process.env.SERVER_IP || wifiIP || '172.16.16.105';
-        const backendPort = process.env.BACKEND_PORT || '5000';
-        
-        // 🔥 SỬA: Trỏ đến giao diện HTML thay vì API JSON
-        const productURL = `http://${serverIP}:${backendPort}/product/${encodeURIComponent(productId)}`;
-        
-        // console.log(`🔄 Tạo QR code cho giao diện: ${productURL}`);
-        
-        const qrCodeDataURL = await QRCode.toDataURL(productURL, {
-            width: 400,
-            margin: 2,
-            errorCorrectionLevel: 'H',
-            color: {
-                dark: '#000000',
-                light: '#FFFFFF'
-            }
-        });
-
-        console.log(`✅ QR code created successfully`);
-        
         // URL cho batch
         const serverIP = process.env.SERVER_IP || wifiIP;
         const backendPort = process.env.BACKEND_PORT || PORT;
@@ -1601,17 +1326,10 @@ app.get('/api/qrcode/:batchNumber', async (req, res) => {
             success: true,
             batchNumber: batchNumber,
             qrCode: qrCodeDataURL,
-            url: productURL,  // URL giao diện mới
-            blockCount: history.length,
-            scanNote: "Quét mã này từ điện thoại để xem lịch sử sản phẩm"
+            url: queryURL,
+            blockCount: history.length
         });
     } catch (error) {
-        console.error('❌ Lỗi tạo QR code:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Lỗi tạo QR code',
-            error: error.message
-        });
         console.error('Lỗi tạo QR code:', error);
         res.status(500).json({ success: false, message: 'Lỗi tạo QR code', error: error.message });
     }
@@ -1677,7 +1395,8 @@ app.get('/api/smart-contract/info', (req, res) => {
 app.get('/api/smart-contract/permissions/:role', (req, res) => {
     try {
         const { role } = req.params;
-        const permissions = supplyChain.smartContract.getRolePermissions(role);        
+        const permissions = supplyChain.getRolePermissions(role);
+        
         res.json({
             success: true,
             data: {
@@ -1954,20 +1673,6 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Thêm route test cơ bản
-app.get('/', (req, res) => {
-  res.json({ message: 'Backend server is running!' });
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    corsConfig: corsOptions.origin
-  });
-});
-
-const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server đang chạy tại:`);
     console.log(`   - Local: http://localhost:${PORT}`);
